@@ -12,6 +12,8 @@ const JUMP_BUFFER_TIME: float = 0.1
 const MAX_JUMPS: int = 2                  # Double jump
 const DOUBLE_JUMP_MULTIPLIER: float = 0.85 # Second jump is slightly weaker
 
+@export var run_animation_scale: float = 0.88
+
 # State
 var current_speed: float = AUTO_RUN_SPEED
 var coyote_timer: float = 0.0
@@ -20,14 +22,10 @@ var is_dead: bool = false
 var start_x: float = 0.0
 var jumps_remaining: int = MAX_JUMPS
 
-# Animation
-var animation_timer: float = 0.0
-const ANIMATION_FPS: float = 15.0
-
 # Get gravity from project settings
 var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 
-@onready var sprite: Sprite2D = $Sprite2D
+@onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
 func _ready() -> void:
@@ -35,6 +33,8 @@ func _ready() -> void:
 	collision_layer = 1
 	collision_mask = 2 | 16  # Environment + Hazards
 	start_x = global_position.x
+	
+	_setup_sprite_frames()
 	
 	# Connect to game state changes
 	GameManager.state_changed.connect(_on_state_changed)
@@ -47,19 +47,97 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 	match new_state:
 		GameManager.State.PLAYING:
 			is_dead = false
+			collision_layer = 1
+			collision_mask = 2 | 16  # Environment + Hazards
+			if sprite:
+				sprite.modulate = Color.WHITE
+				sprite.play("run")
 			set_physics_process(true)
 		GameManager.State.TITLE:
 			set_physics_process(false)
 
-func _process(delta: float) -> void:
-	if not is_dead and is_on_floor():
-		animation_timer += delta
-		if animation_timer >= 1.0 / ANIMATION_FPS:
-			animation_timer -= 1.0 / ANIMATION_FPS
-			sprite.frame = (sprite.frame + 1) % 15
-	elif not is_on_floor():
-		# Optional: static jump frame
-		sprite.frame = 0
+func _process(_delta: float) -> void:
+	_update_animation()
+	_update_animation_scale_and_position()
+
+func _update_animation_scale_and_position() -> void:
+	if not sprite:
+		return
+	var s: float = 1.0
+	if sprite.animation == "run":
+		s = run_animation_scale
+	sprite.scale = Vector2(s, s)
+	sprite.position.y = 20.0 - 24.5 * s
+
+func _update_animation() -> void:
+	if is_dead:
+		if sprite and sprite.animation != "death":
+			sprite.play("death")
+		return
+		
+	if not is_on_floor():
+		if velocity.y < 0:
+			if jumps_remaining == 0:
+				if sprite and sprite.animation != "double_jump":
+					sprite.play("double_jump")
+			else:
+				if sprite and sprite.animation != "jump":
+					sprite.play("jump")
+		else:
+			if sprite and sprite.animation != "fall":
+				sprite.play("fall")
+	else:
+		if sprite and sprite.animation != "run":
+			sprite.play("run")
+
+func _setup_sprite_frames() -> void:
+	var sprite_frames = SpriteFrames.new()
+	
+	sprite_frames.add_animation("run")
+	sprite_frames.add_animation("jump")
+	sprite_frames.add_animation("double_jump")
+	sprite_frames.add_animation("fall")
+	sprite_frames.add_animation("death")
+	
+	sprite_frames.set_animation_speed("run", 12.0)
+	sprite_frames.set_animation_speed("jump", 10.0)
+	sprite_frames.set_animation_speed("double_jump", 12.0)
+	sprite_frames.set_animation_speed("fall", 8.0)
+	sprite_frames.set_animation_speed("death", 10.0)
+	
+	sprite_frames.set_animation_loop("run", true)
+	sprite_frames.set_animation_loop("jump", false)
+	sprite_frames.set_animation_loop("double_jump", false)
+	sprite_frames.set_animation_loop("fall", true)
+	sprite_frames.set_animation_loop("death", false)
+
+	for i in range(1, 7):
+		var path = "res://assets/rocket/Run_%d.png" % i
+		if ResourceLoader.exists(path):
+			sprite_frames.add_frame("run", load(path))
+			
+	for i in range(1, 3):
+		var path = "res://assets/rocket/Jump_%d.png" % i
+		if ResourceLoader.exists(path):
+			sprite_frames.add_frame("jump", load(path))
+			
+	for i in range(1, 5):
+		var path = "res://assets/rocket/DoubleJump_%d.png" % i
+		if ResourceLoader.exists(path):
+			sprite_frames.add_frame("double_jump", load(path))
+			
+	for i in range(1, 3):
+		var path = "res://assets/rocket/Fall_%d.png" % i
+		if ResourceLoader.exists(path):
+			sprite_frames.add_frame("fall", load(path))
+			
+	for i in range(1, 5):
+		var path = "res://assets/rocket/Death_%d.png" % i
+		if ResourceLoader.exists(path):
+			sprite_frames.add_frame("death", load(path))
+
+	sprite.sprite_frames = sprite_frames
+	sprite.play("run")
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -121,8 +199,10 @@ func die() -> void:
 	# Visual feedback
 	if sprite:
 		sprite.modulate = Color(1, 0.3, 0.3, 0.7)
-	# Disable collision
-	collision_shape.set_deferred("disabled", true)
+		sprite.play("death")
+	# Change collision to only detect environment (Layer 2) and ignore player collisions (Layer 1)
+	collision_layer = 0
+	collision_mask = 2
 	# Death bounce
 	velocity.y = -300
 	velocity.x = 0

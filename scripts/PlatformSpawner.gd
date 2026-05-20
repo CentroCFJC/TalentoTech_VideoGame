@@ -294,24 +294,33 @@ func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: floa
 
 func _create_spike(chunk: Node2D, local_x: float, world_y: float) -> void:
 	var spike := Area2D.new()
-	spike.position = Vector2(local_x + SPIKE_WIDTH * 0.5, world_y)
+	
+	# Calculate bottom of the bug resting on top of the platform
+	var platform_top: float = world_y + SPIKE_HEIGHT * 0.5
+	
+	# Scale the bug down (0.65 scale makes the 65x65 sprite about 42x42 px)
+	var bug_scale := Vector2(0.65, 0.65)
+	var bug_height: float = 65.0 * bug_scale.y
+	
+	# Position the bug's center, pushing it down slightly (6.0 px) to offset transparent margins
+	var bug_center_y: float = platform_top - (bug_height * 0.5) + 6.0
+	
+	spike.position = Vector2(local_x + SPIKE_WIDTH * 0.5, bug_center_y)
 	spike.collision_layer = 16  # Hazards (Layer 5)
 	spike.collision_mask = 1    # Player
 	
 	var col := CollisionShape2D.new()
 	var shape := RectangleShape2D.new()
-	shape.size = Vector2(SPIKE_WIDTH, SPIKE_HEIGHT)
+	# For a ~42px bug, a 30x30 collision box is centered and forgiving
+	shape.size = Vector2(30, 30)
 	col.shape = shape
 	spike.add_child(col)
 	
-	# Visual — triangle spikes
-	var visual := Polygon2D.new()
-	visual.polygon = PackedVector2Array([
-		Vector2(-30, 5), Vector2(-20, -12), Vector2(-10, 5),
-		Vector2(0, -12), Vector2(10, 5), Vector2(20, -12), Vector2(30, 5)
-	])
-	visual.color = Color(0.8, 0.15, 0.15, 1)  # Red
-	spike.add_child(visual)
+	# Visual — load and scale the bug sprite
+	var sprite := Sprite2D.new()
+	sprite.texture = load("res://assets/bug/bug_1.png")
+	sprite.scale = bug_scale
+	spike.add_child(sprite)
 	
 	# Connect signal for damage
 	spike.body_entered.connect(_on_spike_body_entered)
