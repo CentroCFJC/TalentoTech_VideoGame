@@ -1,0 +1,69 @@
+extends Area2D
+
+## PowerUp — Collectible item that applies a temporary effect to the player.
+## Modular: add new types by extending the match in _apply_effect().
+
+@export_enum("speed", "jump", "invulnerability") var type: String = "speed"
+@export var duration: float = 5.0
+@export var score_value: int = 50
+
+var is_collected: bool = false
+var bob_tween: Tween
+
+@onready var sprite: Sprite2D = $Sprite2D
+
+func _ready() -> void:
+	# Set collision layer (collectibles = layer 4) and mask (player = layer 1)
+	collision_layer = 8   # Layer 4
+	collision_mask = 1    # Player
+
+	# Connect body entered signal
+	body_entered.connect(_on_body_entered)
+
+	# Start floating animation
+	_start_bob_animation()
+
+	# Color based on type
+	_set_color_by_type()
+
+func _set_color_by_type() -> void:
+	if not sprite:
+		return
+	match type:
+		"speed":
+			sprite.modulate = Color(0.2, 0.8, 1.0)  # Cyan / blue
+		"jump":
+			sprite.modulate = Color(0.2, 1.0, 0.4)   # Green
+		"invulnerability":
+			sprite.modulate = Color(1.0, 0.85, 0.0)  # Gold
+
+func _start_bob_animation() -> void:
+	bob_tween = create_tween().set_loops()
+	bob_tween.tween_property(self, "position:y", position.y - 6, 0.6).set_trans(Tween.TRANS_SINE)
+	bob_tween.tween_property(self, "position:y", position.y + 6, 0.6).set_trans(Tween.TRANS_SINE)
+
+func _on_body_entered(body: Node2D) -> void:
+	if is_collected:
+		return
+
+	# Check if it's the player
+	if body.has_method("apply_powerup"):
+		is_collected = true
+
+		# Stop bobbing
+		if bob_tween:
+			bob_tween.kill()
+
+		# Apply effect
+		body.apply_powerup(type, duration)
+
+		# Add score
+		GameManager.add_score(score_value)
+
+		# Collection animation
+		var tween := create_tween()
+		tween.set_parallel(true)
+		tween.tween_property(self, "scale", Vector2(1.5, 1.5), 0.2)
+		tween.tween_property(self, "modulate:a", 0.0, 0.3)
+		tween.set_parallel(false)
+		tween.tween_callback(queue_free)

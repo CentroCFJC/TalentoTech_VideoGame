@@ -1,0 +1,55 @@
+# Godot 4 specific ignores
+.godot/
+*.translation
+
+# Godot Mono/C# ignores (just in case C# is used in the future)
+.mono/
+data_Mono/
+mono_crash_release.json
+[Bb]in/
+[Oo]bj/
+Build/
+
+# Python ignores (for your Python helper/sprite scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
