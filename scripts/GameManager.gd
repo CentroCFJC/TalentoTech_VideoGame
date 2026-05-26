@@ -14,6 +14,9 @@ var current_state: State = State.TITLE
 var score: int = 0
 var best_score: int = 0
 
+# Death cause — set before DEAD state is emitted so HUD can read it
+var death_cause: String = ""
+
 # High score file path
 const SAVE_PATH: String = "user://highscore.save"
 
@@ -32,6 +35,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Start a new game from title screen
 func start_game() -> void:
 	score = 0
+	death_cause = ""
 	score_changed.emit(score)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)
@@ -45,10 +49,18 @@ func update_score_from_distance(player_x: float) -> void:
 		score = new_score
 		score_changed.emit(score)
 
-## Called when the player dies
-func on_player_death() -> void:
+## Add bonus points directly (powerups, stomps, etc.)
+func add_score(amount: int) -> void:
 	if current_state != State.PLAYING:
 		return
+	score += amount
+	score_changed.emit(score)
+
+## Called when the player dies — cause is "bug", "fall", or ""
+func on_player_death(cause: String = "") -> void:
+	if current_state != State.PLAYING:
+		return
+	death_cause = cause
 	current_state = State.DEAD
 	state_changed.emit(current_state)
 	
@@ -66,6 +78,7 @@ func on_player_death() -> void:
 ## Restart the game
 func restart_game() -> void:
 	score = 0
+	death_cause = ""
 	score_changed.emit(score)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)

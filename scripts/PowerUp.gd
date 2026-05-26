@@ -3,7 +3,7 @@ extends Area2D
 ## PowerUp — Collectible item that applies a temporary effect to the player.
 ## Modular: add new types by extending the match in _apply_effect().
 
-@export_enum("speed", "jump", "invulnerability") var type: String = "speed"
+@export_enum("speed", "jump", "invulnerability", "code") var type: String = "speed"
 @export var duration: float = 5.0
 @export var score_value: int = 50
 
@@ -23,10 +23,10 @@ func _ready() -> void:
 	# Start floating animation
 	_start_bob_animation()
 
-	# Color based on type
-	_set_color_by_type()
+	# Set sprite texture & color based on type
+	_set_appearance_by_type()
 
-func _set_color_by_type() -> void:
+func _set_appearance_by_type() -> void:
 	if not sprite:
 		return
 	match type:
@@ -36,6 +36,13 @@ func _set_color_by_type() -> void:
 			sprite.modulate = Color(0.2, 1.0, 0.4)   # Green
 		"invulnerability":
 			sprite.modulate = Color(1.0, 0.85, 0.0)  # Gold
+		"code":
+			# Load the powerup_code sprite and keep its natural colors
+			var code_tex = load("res://assets/powerups/powerup_code.png")
+			if code_tex:
+				sprite.texture = code_tex
+			sprite.modulate = Color(1.0, 1.0, 1.0)   # Natural colors
+			sprite.scale = Vector2(0.5, 0.5)          # Half size
 
 func _start_bob_animation() -> void:
 	bob_tween = create_tween().set_loops()

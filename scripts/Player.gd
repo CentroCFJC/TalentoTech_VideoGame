@@ -22,6 +22,11 @@ var is_dead: bool = false
 var start_x: float = 0.0
 var jumps_remaining: int = MAX_JUMPS
 
+# ── PowerUp state ──────────────────────────────────────────────
+var active_powerup: String = ""
+var powerup_timer: float = 0.0
+signal powerup_changed(type: String, time_left: float)
+
 # Get gravity from project settings
 var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 
@@ -39,14 +44,16 @@ func _ready() -> void:
 	# Connect to game state changes
 	GameManager.state_changed.connect(_on_state_changed)
 	
-	# If we start in TITLE, freeze the player
+	# If we start in TITLE, freeze and hide the player
 	if GameManager.current_state == GameManager.State.TITLE:
 		set_physics_process(false)
+		visible = false
 
 func _on_state_changed(new_state: GameManager.State) -> void:
 	match new_state:
 		GameManager.State.PLAYING:
 			is_dead = false
+			visible = true
 			collision_layer = 1
 			collision_mask = 2 | 16  # Environment + Hazards
 			if sprite:
@@ -55,10 +62,23 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			set_physics_process(true)
 		GameManager.State.TITLE:
 			set_physics_process(false)
+			visible = false
+		GameManager.State.GAME_OVER:
+			set_physics_process(false)
+			visible = false
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_animation()
 	_update_animation_scale_and_position()
+	_tick_powerup(delta)
+
+func _tick_powerup(delta: float) -> void:
+	if active_powerup == "":
+		return
+	powerup_timer -= delta
+	emit_signal("powerup_changed", active_powerup, powerup_timer)
+	if powerup_timer <= 0.0:
+		_deactivate_powerup()
 
 func _update_animation_scale_and_position() -> void:
 	if not sprite:
@@ -189,10 +209,24 @@ func _physics_process(delta: float) -> void:
 
 	# --- Fall death ---
 	if global_position.y > 1000:
-		die()
+		die("fall")
 
-## Player death
-func die() -> void:
+	# --- Bug stomp check (only when "code" powerup active) ---
+	if active_powerup == "code" and velocity.y > 0:
+		_check_bug_stomp()
+
+## Check if rocket is stomping a bug from above
+func _check_bug_stomp() -> void:
+	for i in get_slide_collision_count():
+		var col = get_slide_collision(i)
+		var collider = col.get_collider()
+		if collider and collider.is_in_group("bugs"):
+			if collider.has_method("die"):
+				collider.die()
+				GameManager.add_score(100)
+
+## Player death — cause: "bug", "fall", or ""
+func die(cause: String = "") -> void:
 	if is_dead:
 		return
 	is_dead = true
@@ -206,11 +240,53 @@ func die() -> void:
 	# Death bounce
 	velocity.y = -300
 	velocity.x = 0
-	# Notify game manager
-	GameManager.on_player_death()
+	# Notify game manager with cause
+	GameManager.on_player_death(cause)
 
-## Take damage from hazard
-func take_damage() -> void:
+## Take damage from hazard — ignored if "code" powerup is active and it's a bug
+func take_damage(cause: String = "bug") -> void:
 	if is_dead:
 		return
-	die()
+	if active_powerup == "code" and cause == "bug":
+		# Bug stomp instead of dying — also handled above, but guard here too
+		return
+	die(cause)
+
+# ── PowerUp System ─────────────────────────────────────────────
+
+## Called by PowerUp.gd when the player touches a collectible
+func apply_powerup(type: String, duration: float) -> void:
+	active_powerup = type
+	powerup_timer = duration
+	emit_signal("powerup_changed", active_powerup, powerup_timer)
+
+	match type:
+		"speed":
+			current_speed = min(current_speed * 1.5, MAX_SPEED)
+		"jump":
+			pass  # Jump boost handled elsewhere if needed
+		"invulnerability":
+			collision_mask = 2  # Only environment, skip hazards
+		"code":
+			# Enable bug-stomping: re-enable collision with bugs (layer 16)
+			# but we handle stomp in _check_bug_stomp via group, keep mask as-is
+			if sprite:
+				sprite.modulate = Color(0.5, 1.0, 0.5)  # Green glow
+
+func _deactivate_powerup() -> void:
+	match active_powerup:
+		"speed":
+			pass  # Speed will naturally recalculate from distance
+		"invulnerability":
+			collision_mask = 2 | 16  # Restore hazard detection
+		"code":
+			if sprite:
+				sprite.modulate = Color.WHITE
+
+	active_powerup = ""
+	powerup_timer = 0.0
+	emit_signal("powerup_changed", "", 0.0)
+
+## Returns true when the code skill-up is active (used by spawner/bugs)
+func has_code_powerup() -> bool:
+	return active_powerup == "code"

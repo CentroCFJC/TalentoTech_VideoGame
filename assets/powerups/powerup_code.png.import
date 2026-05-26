@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://r32v6olpwng7"
-path="res://.godot/imported/player_running.png-a6db12e4a91f37cd13d7515eb111cb25.ctex"
+uid="uid://cfs4f6hmdsmvd"
+path="res://.godot/imported/powerup_code.png-052bed1622b71b16e1031278fbccdd6c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/player_running.png"
-dest_files=["res://.godot/imported/player_running.png-a6db12e4a91f37cd13d7515eb111cb25.ctex"]
+source_file="res://assets/powerups/powerup_code.png"
+dest_files=["res://.godot/imported/powerup_code.png-052bed1622b71b16e1031278fbccdd6c.ctex"]
 
 [params]
 

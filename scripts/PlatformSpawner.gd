@@ -48,6 +48,12 @@ var rng := RandomNumberGenerator.new()
 var ground_shape: RectangleShape2D
 var spike_shape: RectangleShape2D
 
+# PowerUp spawning
+const POWERUP_SPAWN_INTERVAL: float = 18.0   # Every ~18s a powerup_code appears
+var powerup_spawn_timer: float = 10.0        # First spawn after 10s
+var powerup_scene: PackedScene = null
+var last_platform_spawn_x: float = 0.0       # X of last spawned powerup platform
+
 func _ready() -> void:
 	rng.randomize()
 	
@@ -55,15 +61,19 @@ func _ready() -> void:
 	spike_shape = RectangleShape2D.new()
 	spike_shape.size = Vector2(SPIKE_WIDTH, SPIKE_HEIGHT)
 	
+	# Pre-load the PowerUp scene
+	if ResourceLoader.exists("res://scenes/PowerUp.tscn"):
+		powerup_scene = load("res://scenes/PowerUp.tscn")
+	
 	# Connect to game state
 	GameManager.state_changed.connect(_on_state_changed)
 
 func _on_state_changed(new_state: GameManager.State) -> void:
 	if new_state == GameManager.State.PLAYING:
 		# Reset is handled by scene reload for restart
-		pass
+		powerup_spawn_timer = 10.0
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
 		return
 	
@@ -91,6 +101,32 @@ func _process(_delta: float) -> void:
 	for chunk in to_remove:
 		active_chunks.erase(chunk)
 		chunk.queue_free()
+
+	# ── PowerUp code spawning ──
+	_tick_powerup_spawn(delta)
+
+## Periodically spawn powerup_code on top of visible platforms
+func _tick_powerup_spawn(delta: float) -> void:
+	if not powerup_scene:
+		return
+	powerup_spawn_timer -= delta
+	if powerup_spawn_timer <= 0.0:
+		powerup_spawn_timer = POWERUP_SPAWN_INTERVAL
+		# Spawn a little ahead of the camera so the player can see it approaching
+		if camera:
+			var spawn_x: float = camera.global_position.x + 700.0
+			var spawn_y: float = last_platform_y - 40.0
+			_spawn_code_powerup(spawn_x, spawn_y)
+
+func _spawn_code_powerup(world_x: float, world_y: float) -> void:
+	if not powerup_scene:
+		return
+	var pu: Area2D = powerup_scene.instantiate()
+	pu.type = "code"
+	pu.duration = 10.0
+	pu.score_value = 75
+	pu.global_position = Vector2(world_x, world_y)
+	add_child(pu)
 
 func _get_difficulty() -> int:
 	var distance: float = next_chunk_x
@@ -153,15 +189,76 @@ func _generate_chunk(chunk_x: float) -> void:
 func _build_flat_ground(chunk: Node2D) -> void:
 	_create_platform(chunk, 0, last_platform_y, CHUNK_WIDTH)
 	
-	# Add tutorial label if it's the first chunk
+	# Tutorial panel 1 — first chunk (x=0): Jump instruction
 	if chunk.global_position.x == 0:
-		var label := Label.new()
-		label.text = "Usa El Boton para saltar.\nPresionalo de nuevo en el aire para doble salto."
-		label.position = Vector2(CHUNK_WIDTH * 0.5 - 200, last_platform_y - 200)
-		label.add_theme_font_size_override("font_size", 28)
-		label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
-		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		chunk.add_child(label)
+		_create_tutorial_panel(
+			chunk,
+			"Pulsa el botón para Saltar",
+			"res://assets/rocket/Jump_2.png",
+			Vector2(CHUNK_WIDTH * 0.50, last_platform_y - 165)
+		)
+	
+	# Tutorial panel 2 — second chunk (x=800): Double-jump instruction
+	elif chunk.global_position.x == CHUNK_WIDTH:
+		_create_tutorial_panel(
+			chunk,
+			"Pulsa de nuevo para\ndoble salto",
+			"res://assets/rocket/DoubleJump_3.png",
+			Vector2(CHUNK_WIDTH * 0.50, last_platform_y - 165)
+		)
+
+## Creates a styled tutorial panel: [TEXT] then [CIRCLE IMAGE] (image "adelante").
+func _create_tutorial_panel(chunk: Node2D, message: String, image_path: String, pos: Vector2) -> void:
+	# Root row — laid out horizontally, positioned in world space
+	var row := HBoxContainer.new()
+	row.position = pos
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+
+	# ── 1. Label (left / "atras", the player reads it first) ──
+	var label := Label.new()
+	label.text = message
+	label.add_theme_font_size_override("font_size", 26)
+	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+	label.add_theme_constant_override("shadow_offset_x", 2)
+	label.add_theme_constant_override("shadow_offset_y", 2)
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+
+	# ── 2. Circular icon panel (right / "adelante") ──
+	const ICON_SIZE := 56          # smaller → less pixelation
+	const PADDING   := 6           # inset from circle edge
+
+	var circle := Panel.new()
+	circle.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color        = Color(0.08, 0.08, 0.14, 0.88)
+	style.border_color    = Color(0.55, 0.85, 1.0, 0.95)
+	style.set_border_width_all(2)
+	var r: int = ICON_SIZE / 2
+	style.corner_radius_top_left     = r
+	style.corner_radius_top_right    = r
+	style.corner_radius_bottom_left  = r
+	style.corner_radius_bottom_right = r
+	style.anti_aliasing              = true
+	circle.add_theme_stylebox_override("panel", style)
+
+	var tex_rect := TextureRect.new()
+	if ResourceLoader.exists(image_path):
+		tex_rect.texture = load(image_path)
+	# Fill the circle minus the padding border
+	tex_rect.anchor_left   = 0.0;  tex_rect.anchor_top    = 0.0
+	tex_rect.anchor_right  = 1.0;  tex_rect.anchor_bottom = 1.0
+	tex_rect.offset_left   =  PADDING;  tex_rect.offset_top    =  PADDING
+	tex_rect.offset_right  = -PADDING;  tex_rect.offset_bottom = -PADDING
+	tex_rect.stretch_mode  = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex_rect.expand_mode   = TextureRect.EXPAND_IGNORE_SIZE
+	circle.add_child(tex_rect)
+
+	row.add_child(circle)
+	chunk.add_child(row)
 
 func _build_ground_gap(chunk: Node2D, large: bool) -> void:
 	var gap_size: float = MIN_GAP_WIDTH if not large else rng.randf_range(150.0, MAX_GAP_WIDTH)
@@ -309,6 +406,9 @@ func _create_spike(chunk: Node2D, local_x: float, world_y: float) -> void:
 	spike.collision_layer = 16  # Hazards (Layer 5)
 	spike.collision_mask = 1    # Player
 	
+	# ← Mark as a bug so player can stomp it with code powerup
+	spike.add_to_group("bugs")
+	
 	var col := CollisionShape2D.new()
 	var shape := RectangleShape2D.new()
 	# For a ~42px bug, a 30x30 collision box is centered and forgiving
@@ -323,11 +423,30 @@ func _create_spike(chunk: Node2D, local_x: float, world_y: float) -> void:
 	spike.add_child(sprite)
 	
 	# Connect signal for damage
-	spike.body_entered.connect(_on_spike_body_entered)
+	spike.body_entered.connect(_on_spike_body_entered.bind(spike))
 	spike.monitoring = true
 	
 	chunk.add_child(spike)
 
-func _on_spike_body_entered(body: Node2D) -> void:
-	if body.has_method("take_damage"):
-		body.take_damage()
+func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
+	if not body.has_method("take_damage"):
+		return
+	# If player has the code powerup active, stomp the bug instead of taking damage
+	if body.has_method("has_code_powerup") and body.has_code_powerup():
+		if spike.has_method("queue_free") and not spike.is_queued_for_deletion():
+			# Squash the bug visually
+			var bug_sprite: Sprite2D = null
+			for child in spike.get_children():
+				if child is Sprite2D:
+					bug_sprite = child
+					break
+			spike.collision_layer = 0
+			spike.collision_mask = 0
+			var tween := spike.create_tween()
+			if bug_sprite:
+				tween.tween_property(bug_sprite, "scale", Vector2(1.5, 0.1), 0.15)
+				tween.tween_property(bug_sprite, "modulate:a", 0.0, 0.2)
+			tween.tween_callback(spike.queue_free)
+			GameManager.add_score(100)
+		return
+	body.take_damage()
