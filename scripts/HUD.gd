@@ -169,6 +169,11 @@ func _on_powerup_changed(type: String, time_left: float) -> void:
 				powerup_icon_rect.texture = load("res://assets/powerups/powerup_code.png")
 			powerup_msg_label.text = "SkillUp: Programación: Puedes eliminar bugs!"
 			powerup_timer_label.text = "%.1f s" % maxf(time_left, 0.0)
+		"cpu":
+			if powerup_icon_rect:
+				powerup_icon_rect.texture = load("res://assets/powerups/powerup_cpu.png")
+			powerup_msg_label.text = "SkillUp: Hardware: Atraviesa servidores!"
+			powerup_timer_label.text = "%.1f s" % maxf(time_left, 0.0)
 
 	# Fade in if not already visible
 	if powerup_panel.modulate.a < 0.9:
@@ -214,6 +219,11 @@ func _build_death_cause_ui() -> void:
 			headline  = "Rocket no vio el abismo..."
 			detail    = "¡Usa el doble salto para\ncruzar los vacíos!"
 			img_paths = []
+		"server":
+			headline  = "¡Error 500! Servidor caído."
+			detail    = "Con el SkillUp: Hardware\npodrás optimizarlos."
+			img_paths = ["res://assets/server/server_red.png",
+						 "res://assets/powerups/powerup_cpu.png"]
 		_:
 			# Unknown cause — no extra block
 			return

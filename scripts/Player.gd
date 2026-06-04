@@ -223,7 +223,6 @@ func _check_bug_stomp() -> void:
 		if collider and collider.is_in_group("bugs"):
 			if collider.has_method("die"):
 				collider.die()
-				GameManager.add_score(100)
 
 ## Player death — cause: "bug", "fall", or ""
 func die(cause: String = "") -> void:
@@ -272,6 +271,9 @@ func apply_powerup(type: String, duration: float) -> void:
 			# but we handle stomp in _check_bug_stomp via group, keep mask as-is
 			if sprite:
 				sprite.modulate = Color(0.5, 1.0, 0.5)  # Green glow
+		"cpu":
+			if sprite:
+				sprite.modulate = Color(0.7, 0.9, 1.0)  # Blue glow
 
 func _deactivate_powerup() -> void:
 	match active_powerup:
@@ -282,6 +284,9 @@ func _deactivate_powerup() -> void:
 		"code":
 			if sprite:
 				sprite.modulate = Color.WHITE
+		"cpu":
+			if sprite:
+				sprite.modulate = Color.WHITE
 
 	active_powerup = ""
 	powerup_timer = 0.0
@@ -290,3 +295,7 @@ func _deactivate_powerup() -> void:
 ## Returns true when the code skill-up is active (used by spawner/bugs)
 func has_code_powerup() -> bool:
 	return active_powerup == "code"
+
+## Returns true when the cpu skill-up is active (used by spawner/servers)
+func has_cpu_powerup() -> bool:
+	return active_powerup == "cpu"

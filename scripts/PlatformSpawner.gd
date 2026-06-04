@@ -20,9 +20,8 @@ const PLATFORM_HEIGHT: float = 20.0
 const DIFFICULTY_INTERVAL: float = 1000.0
 const MAX_DIFFICULTY: int = 4
 
-# Spike settings
-const SPIKE_WIDTH: float = 60.0
-const SPIKE_HEIGHT: float = 12.0
+# Obstacle offset (horizontal half-width used for centering)
+const OBSTACLE_OFFSET: float = 30.0
 
 # Patterns enum
 enum Pattern {
@@ -32,10 +31,14 @@ enum Pattern {
 	STEP_UP,
 	STEP_DOWN,
 	FLOATING_CHAIN,
-	SPIKE_CORRIDOR,
-	SPIKE_GAP_COMBO,
-	MULTI_SPIKE_FIELD
+	OBSTACLE_CORRIDOR,
+	OBSTACLE_GAP_COMBO,
+	MULTI_OBSTACLE_FIELD
 }
+
+# Server settings
+const SERVER_WIDTH: float = 50.0
+const SERVER_HEIGHT: float = 40.0
 
 # State
 var next_chunk_x: float = 0.0
@@ -43,23 +46,16 @@ var last_platform_y: float = GROUND_Y
 var active_chunks: Array[Node2D] = []
 var camera: Camera2D = null
 var rng := RandomNumberGenerator.new()
+var last_server_spawn_x: float = -2000.0
 
 # Collision shapes (created once, shared)
 var ground_shape: RectangleShape2D
-var spike_shape: RectangleShape2D
 
 # PowerUp spawning
-const POWERUP_SPAWN_INTERVAL: float = 18.0   # Every ~18s a powerup_code appears
-var powerup_spawn_timer: float = 10.0        # First spawn after 10s
 var powerup_scene: PackedScene = null
-var last_platform_spawn_x: float = 0.0       # X of last spawned powerup platform
 
 func _ready() -> void:
 	rng.randomize()
-	
-	# Pre-create shared shapes
-	spike_shape = RectangleShape2D.new()
-	spike_shape.size = Vector2(SPIKE_WIDTH, SPIKE_HEIGHT)
 	
 	# Pre-load the PowerUp scene
 	if ResourceLoader.exists("res://scenes/PowerUp.tscn"):
@@ -68,10 +64,8 @@ func _ready() -> void:
 	# Connect to game state
 	GameManager.state_changed.connect(_on_state_changed)
 
-func _on_state_changed(new_state: GameManager.State) -> void:
-	if new_state == GameManager.State.PLAYING:
-		# Reset is handled by scene reload for restart
-		powerup_spawn_timer = 10.0
+func _on_state_changed(_new_state: GameManager.State) -> void:
+	pass
 
 func _process(delta: float) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
@@ -102,31 +96,32 @@ func _process(delta: float) -> void:
 		active_chunks.erase(chunk)
 		chunk.queue_free()
 
-	# ── PowerUp code spawning ──
-	_tick_powerup_spawn(delta)
-
-## Periodically spawn powerup_code on top of visible platforms
-func _tick_powerup_spawn(delta: float) -> void:
-	if not powerup_scene:
-		return
-	powerup_spawn_timer -= delta
-	if powerup_spawn_timer <= 0.0:
-		powerup_spawn_timer = POWERUP_SPAWN_INTERVAL
-		# Spawn a little ahead of the camera so the player can see it approaching
-		if camera:
-			var spawn_x: float = camera.global_position.x + 700.0
-			var spawn_y: float = last_platform_y - 40.0
-			_spawn_code_powerup(spawn_x, spawn_y)
-
-func _spawn_code_powerup(world_x: float, world_y: float) -> void:
+func _spawn_powerup(chunk: Node2D, world_x: float, world_y: float, p_type: String) -> void:
 	if not powerup_scene:
 		return
 	var pu: Area2D = powerup_scene.instantiate()
-	pu.type = "code"
+	pu.type = p_type
 	pu.duration = 10.0
-	pu.score_value = 75
-	pu.global_position = Vector2(world_x, world_y)
-	add_child(pu)
+	
+	# Fix Tween bug: set local position BEFORE adding to tree so _ready() caches the right Y
+	pu.position = Vector2(world_x - chunk.global_position.x, world_y - chunk.global_position.y)
+	chunk.add_child(pu)
+
+## Spawns a power-up at the beginning of an obstacle pattern chunk
+func _spawn_powerup_for_obstacle_pattern(chunk: Node2D, chunk_x: float) -> void:
+	if not powerup_scene:
+		return
+	# Don't spawn power-ups until obstacles can actually appear
+	if GameManager.score < 50:
+		return
+	var p_type: String
+	if GameManager.score < 150:
+		p_type = "code"
+	else:
+		p_type = "code" if rng.randf() > 0.5 else "cpu"
+	var spawn_world_x: float = chunk_x + 100.0
+	var spawn_world_y: float = last_platform_y - PLATFORM_HEIGHT * 0.5 - rng.randf_range(10.0, 180.0)
+	_spawn_powerup(chunk, spawn_world_x, spawn_world_y, p_type)
 
 func _get_difficulty() -> int:
 	var distance: float = next_chunk_x
@@ -138,12 +133,12 @@ func _get_available_patterns(difficulty: int) -> Array[Pattern]:
 	if difficulty >= 2:
 		patterns.append(Pattern.GROUND_GAP_LARGE)
 		patterns.append(Pattern.STEP_DOWN)
-		patterns.append(Pattern.SPIKE_CORRIDOR)
+		patterns.append(Pattern.OBSTACLE_CORRIDOR)
 	if difficulty >= 3:
 		patterns.append(Pattern.FLOATING_CHAIN)
-		patterns.append(Pattern.SPIKE_GAP_COMBO)
+		patterns.append(Pattern.OBSTACLE_GAP_COMBO)
 	if difficulty >= 4:
-		patterns.append(Pattern.MULTI_SPIKE_FIELD)
+		patterns.append(Pattern.MULTI_OBSTACLE_FIELD)
 	
 	return patterns
 
@@ -177,12 +172,16 @@ func _generate_chunk(chunk_x: float) -> void:
 			_build_steps(chunk, false)
 		Pattern.FLOATING_CHAIN:
 			_build_floating_chain(chunk)
-		Pattern.SPIKE_CORRIDOR:
-			_build_spike_corridor(chunk)
-		Pattern.SPIKE_GAP_COMBO:
-			_build_spike_gap_combo(chunk)
-		Pattern.MULTI_SPIKE_FIELD:
-			_build_multi_spike_field(chunk)
+		Pattern.OBSTACLE_CORRIDOR:
+			_build_obstacle_corridor(chunk)
+		Pattern.OBSTACLE_GAP_COMBO:
+			_build_obstacle_gap_combo(chunk)
+		Pattern.MULTI_OBSTACLE_FIELD:
+			_build_multi_obstacle_field(chunk)
+
+	# Spawn power-up at the start of obstacle patterns
+	if pattern in [Pattern.OBSTACLE_CORRIDOR, Pattern.OBSTACLE_GAP_COMBO, Pattern.MULTI_OBSTACLE_FIELD]:
+		_spawn_powerup_for_obstacle_pattern(chunk, chunk_x)
 
 # ── Pattern Builders ──────────────────────────────────────────
 
@@ -220,9 +219,9 @@ func _create_tutorial_panel(chunk: Node2D, message: String, image_path: String, 
 	label.text = message
 	label.add_theme_font_size_override("font_size", 26)
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
-	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	label.add_theme_constant_override("shadow_offset_x", 2)
-	label.add_theme_constant_override("shadow_offset_y", 2)
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
+	label.add_theme_constant_override("shadow_offset_x", 3)
+	label.add_theme_constant_override("shadow_offset_y", 3)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
@@ -307,54 +306,54 @@ func _build_floating_chain(chunk: Node2D) -> void:
 		_create_platform(chunk, x_pos, y_pos, plat_width)
 		last_platform_y = y_pos
 
-func _build_spike_corridor(chunk: Node2D) -> void:
-	# Ground with spikes on it, and floating platforms to jump over
+func _build_obstacle_corridor(chunk: Node2D) -> void:
+	# Ground with bugs/servers on it, and a floating platform to help jump over
 	_create_platform(chunk, 0, last_platform_y, CHUNK_WIDTH)
 	
-	# Place 2-3 spike groups on the ground
-	var num_spikes: int = rng.randi_range(2, 3)
-	var spacing: float = CHUNK_WIDTH / (num_spikes + 1)
+	# Place 2-3 obstacles on the ground
+	var num_obstacles: int = rng.randi_range(2, 3)
+	var spacing: float = CHUNK_WIDTH / (num_obstacles + 1)
 	
-	for i in num_spikes:
-		var spike_x: float = (i + 1) * spacing - SPIKE_WIDTH * 0.5
-		_create_spike(chunk, spike_x, last_platform_y - PLATFORM_HEIGHT * 0.5 - SPIKE_HEIGHT * 0.5)
+	for i in num_obstacles:
+		var obs_x: float = (i + 1) * spacing - OBSTACLE_OFFSET
+		_create_obstacle(chunk, obs_x, last_platform_y - PLATFORM_HEIGHT * 0.5)
 	
 	# Add a floating platform to help jump over
 	_create_platform(chunk, CHUNK_WIDTH * 0.3, last_platform_y - 100.0, 120.0)
 
-func _build_spike_gap_combo(chunk: Node2D) -> void:
+func _build_obstacle_gap_combo(chunk: Node2D) -> void:
 	var gap_start: float = rng.randf_range(250.0, 400.0)
-	# Max gap reduced from 180→150 to ensure jumpable at all speeds
+	# Max gap reduced to 150 to ensure jumpable at all speeds
 	var gap_size: float = rng.randf_range(100.0, 150.0)
 	
-	# Ground before gap with spikes set back from edge (30px margin)
+	# Ground before gap with obstacle set back from edge (30px margin)
 	_create_platform(chunk, 0, last_platform_y, gap_start)
-	_create_spike(chunk, gap_start - SPIKE_WIDTH - 30.0, last_platform_y - PLATFORM_HEIGHT * 0.5 - SPIKE_HEIGHT * 0.5)
+	_create_obstacle(chunk, gap_start - OBSTACLE_OFFSET * 2 - 30.0, last_platform_y - PLATFORM_HEIGHT * 0.5)
 	
-	# Ground after gap with spikes set back from landing (safe landing zone of 80px)
+	# Ground after gap with obstacle set back from landing (safe landing zone of 80px)
 	var after_x: float = gap_start + gap_size
 	var after_width: float = CHUNK_WIDTH - after_x
 	_create_platform(chunk, after_x, last_platform_y, after_width)
-	_create_spike(chunk, after_x + 80.0, last_platform_y - PLATFORM_HEIGHT * 0.5 - SPIKE_HEIGHT * 0.5)
+	_create_obstacle(chunk, after_x + 80.0, last_platform_y - PLATFORM_HEIGHT * 0.5)
 
-func _build_multi_spike_field(chunk: Node2D) -> void:
-	# Ground with many spike clusters
+func _build_multi_obstacle_field(chunk: Node2D) -> void:
+	# Ground with many obstacle clusters (bugs and servers)
 	_create_platform(chunk, 0, last_platform_y, CHUNK_WIDTH)
 	
 	var num_clusters: int = rng.randi_range(3, 4)
 	var spacing: float = CHUNK_WIDTH / (num_clusters + 1)
 	
-	# Calculate max cluster size that guarantees a 100px safe gap between clusters
-	var spike_unit: float = SPIKE_WIDTH + 5.0  # 65px per spike in cluster
-	var max_cluster_size: int = maxi(1, int((spacing - 100.0) / spike_unit))
+	# Each obstacle unit is ~65px wide; guarantee 100px safe gap between clusters
+	var obs_unit: float = OBSTACLE_OFFSET * 2 + 5.0
+	var max_cluster_size: int = maxi(1, int((spacing - 100.0) / obs_unit))
 	max_cluster_size = mini(max_cluster_size, 3)  # Never more than triple
 	
 	for i in num_clusters:
 		var cluster_x: float = (i + 1) * spacing
 		var cluster_size: int = rng.randi_range(1, max_cluster_size)
 		for j in cluster_size:
-			_create_spike(chunk, cluster_x + j * spike_unit - cluster_size * SPIKE_WIDTH * 0.5, 
-				last_platform_y - PLATFORM_HEIGHT * 0.5 - SPIKE_HEIGHT * 0.5)
+			_create_obstacle(chunk, cluster_x + j * obs_unit - cluster_size * OBSTACLE_OFFSET,
+				last_platform_y - PLATFORM_HEIGHT * 0.5)
 
 # ── Node Creation Helpers ─────────────────────────────────────
 
@@ -389,44 +388,77 @@ func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: floa
 	
 	chunk.add_child(platform)
 
-func _create_spike(chunk: Node2D, local_x: float, world_y: float) -> void:
-	var spike := Area2D.new()
+func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, type: String = "") -> void:
+	var world_x = chunk.global_position.x + local_x
 	
-	# Calculate bottom of the bug resting on top of the platform
-	var platform_top: float = world_y + SPIKE_HEIGHT * 0.5
-	
-	# Scale the bug down (0.65 scale makes the 65x65 sprite about 42x42 px)
-	var bug_scale := Vector2(0.65, 0.65)
-	var bug_height: float = 65.0 * bug_scale.y
-	
-	# Position the bug's center, pushing it down slightly (6.0 px) to offset transparent margins
-	var bug_center_y: float = platform_top - (bug_height * 0.5) + 6.0
-	
-	spike.position = Vector2(local_x + SPIKE_WIDTH * 0.5, bug_center_y)
-	spike.collision_layer = 16  # Hazards (Layer 5)
-	spike.collision_mask = 1    # Player
-	
-	# ← Mark as a bug so player can stomp it with code powerup
-	spike.add_to_group("bugs")
-	
-	var col := CollisionShape2D.new()
-	var shape := RectangleShape2D.new()
-	# For a ~42px bug, a 30x30 collision box is centered and forgiving
-	shape.size = Vector2(30, 30)
-	col.shape = shape
-	spike.add_child(col)
-	
-	# Visual — load and scale the bug sprite
-	var sprite := Sprite2D.new()
-	sprite.texture = load("res://assets/bug/bug_1.png")
-	sprite.scale = bug_scale
-	spike.add_child(sprite)
-	
-	# Connect signal for damage
-	spike.body_entered.connect(_on_spike_body_entered.bind(spike))
-	spike.monitoring = true
-	
-	chunk.add_child(spike)
+	if type == "":
+		if GameManager.score < 50:
+			return
+		elif GameManager.score < 150:
+			type = "bug"
+		else:
+			type = "server" if rng.randf() < 0.5 else "bug"
+			
+	if type == "server":
+		if world_x - last_server_spawn_x < 1000.0:
+			type = "bug"
+		else:
+			last_server_spawn_x = world_x
+			
+	if type == "bug":
+		var bug_area := Area2D.new()
+		
+		var bug_scale := Vector2(0.65, 0.65)
+		var bug_height: float = 65.0 * bug_scale.y
+		var bug_center_y: float = platform_surface_y - (bug_height * 0.5) + 6.0
+		
+		bug_area.position = Vector2(local_x + OBSTACLE_OFFSET, bug_center_y)
+		bug_area.collision_layer = 16  # Hazards (Layer 5)
+		bug_area.collision_mask = 1    # Player
+		bug_area.add_to_group("bugs")
+		
+		var col := CollisionShape2D.new()
+		var shape := RectangleShape2D.new()
+		shape.size = Vector2(30, 30)
+		col.shape = shape
+		bug_area.add_child(col)
+		
+		var sprite := Sprite2D.new()
+		sprite.texture = load("res://assets/bug/bug_1.png")
+		sprite.scale = bug_scale
+		bug_area.add_child(sprite)
+		
+		bug_area.body_entered.connect(_on_spike_body_entered.bind(bug_area))
+		bug_area.monitoring = true
+		chunk.add_child(bug_area)
+		
+	elif type == "server":
+		var num_servers: int = rng.randi_range(1, 3)
+		for i in num_servers:
+			var server_y: float = platform_surface_y - (i * SERVER_HEIGHT) - SERVER_HEIGHT * 0.5
+			var server := Area2D.new()
+			server.position = Vector2(local_x + OBSTACLE_OFFSET, server_y)
+			server.collision_layer = 16  # Hazards
+			server.collision_mask = 1    # Player
+			
+			var col := CollisionShape2D.new()
+			var shape := RectangleShape2D.new()
+			shape.size = Vector2(SERVER_WIDTH, SERVER_HEIGHT)
+			col.shape = shape
+			server.add_child(col)
+			
+			var sprite := Sprite2D.new()
+			sprite.texture = load("res://assets/server/server_red.png")
+			server.add_child(sprite)
+			
+			if sprite.texture:
+				var tex_size = sprite.texture.get_size()
+				if tex_size.x > 0 and tex_size.y > 0:
+					sprite.scale = Vector2(SERVER_WIDTH / tex_size.x, SERVER_HEIGHT / tex_size.y)
+					
+			server.body_entered.connect(_on_server_body_entered.bind(server))
+			server.monitoring = true
+			chunk.add_child(server)
 
 func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 	if not body.has_method("take_damage"):
@@ -447,6 +479,27 @@ func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 				tween.tween_property(bug_sprite, "scale", Vector2(1.5, 0.1), 0.15)
 				tween.tween_property(bug_sprite, "modulate:a", 0.0, 0.2)
 			tween.tween_callback(spike.queue_free)
-			GameManager.add_score(100)
 		return
 	body.take_damage()
+
+
+
+func _on_server_body_entered(body: Node2D, server: Area2D) -> void:
+	if not body.has_method("take_damage"):
+		return
+		
+	# Si el jugador tiene el powerup de la CPU, atraviesa y cambia a azul
+	if body.has_method("has_cpu_powerup") and body.has_cpu_powerup():
+		server.collision_layer = 0
+		server.collision_mask = 0
+		var server_sprite: Sprite2D = null
+		for child in server.get_children():
+			if child is Sprite2D:
+				server_sprite = child
+				break
+		if server_sprite:
+			var tween := server.create_tween()
+			tween.tween_property(server_sprite, "modulate", Color(0.7, 0.9, 1.0), 0.2)
+		return
+		
+	body.take_damage("server")
