@@ -19,19 +19,23 @@ var current_speed: float = AUTO_RUN_SPEED
 var coyote_timer: float = 0.0
 var jump_buffer_timer: float = 0.0
 var is_dead: bool = false
+var is_falling_out: bool = false
+var fall_timeout: float = 0.0
 var start_x: float = 0.0
 var jumps_remaining: int = MAX_JUMPS
 
-# ── PowerUp state ──────────────────────────────────────────────
-var active_powerup: String = ""
-var powerup_timer: float = 0.0
-signal powerup_changed(type: String, time_left: float)
+# ── PowerUp charge state (one-time death evade) ───────────────
+var has_code_charge: bool = false
+var has_cpu_charge: bool = false
+signal powerup_changed(type: String, active: bool)
 
 # Get gravity from project settings
 var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 
 @onready var sprite: AnimatedSprite2D = $AnimatedSprite2D
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
+@onready var jump_sfx: AudioStreamPlayer2D = $JumpSFX
+@onready var double_jump_sfx: AudioStreamPlayer2D = $DoubleJumpSFX
 
 func _ready() -> void:
 	add_to_group("player")
@@ -53,6 +57,7 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 	match new_state:
 		GameManager.State.PLAYING:
 			is_dead = false
+			is_falling_out = false
 			visible = true
 			collision_layer = 1
 			collision_mask = 2 | 16  # Environment + Hazards
@@ -70,15 +75,6 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 func _process(delta: float) -> void:
 	_update_animation()
 	_update_animation_scale_and_position()
-	_tick_powerup(delta)
-
-func _tick_powerup(delta: float) -> void:
-	if active_powerup == "":
-		return
-	powerup_timer -= delta
-	emit_signal("powerup_changed", active_powerup, powerup_timer)
-	if powerup_timer <= 0.0:
-		_deactivate_powerup()
 
 func _update_animation_scale_and_position() -> void:
 	if not sprite:
@@ -91,7 +87,7 @@ func _update_animation_scale_and_position() -> void:
 
 func _update_animation() -> void:
 	if is_dead:
-		if sprite and sprite.animation != "death":
+		if sprite and sprite.animation != "death" and not is_falling_out:
 			sprite.play("death")
 		return
 		
@@ -161,9 +157,42 @@ func _setup_sprite_frames() -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
-		# Still apply gravity during death animation
 		velocity.y += gravity * delta
 		move_and_slide()
+		return
+
+	# ---- Disable hazard detection early when falling below playable area ----
+	# Hazards (bugs/servers) are Area2Ds using mask=1 (Player layer).
+	# Clear collision_layer so their body_entered cannot fire before is_falling_out kicks in.
+	if global_position.y > 500 and not is_on_floor() and velocity.y > 0 and not is_falling_out:
+		collision_layer = 0
+		collision_mask = 2  # Only environment (layer 2) for landing on lower platforms
+
+	# --- Fall death — fall off-screen before dying ---
+	if global_position.y > 1000 and not is_falling_out:
+		is_falling_out = true
+		collision_layer = 0
+		collision_mask = 0
+		fall_timeout = 2.5
+		var cam: Camera2D = $Camera2D
+		if cam:
+			cam.reparent(get_tree().current_scene)
+
+	if is_falling_out:
+		velocity.y += gravity * delta
+		velocity.x = 0
+		move_and_slide()
+		fall_timeout -= delta
+		# Primary: fall well past camera bottom before dying
+		var cam: Camera2D = get_viewport().get_camera_2d()
+		if cam:
+			var cam_bottom: float = cam.global_position.y + get_viewport_rect().size.y * 0.5 / cam.zoom.y
+			if global_position.y > cam_bottom + 400:
+				die("fall")
+				return
+		# Fallback: force death after timeout even if camera check never passes
+		if fall_timeout <= 0:
+			die("fall")
 		return
 
 	# --- Progressive speed ---
@@ -175,6 +204,10 @@ func _physics_process(delta: float) -> void:
 		velocity.y += gravity * delta
 		coyote_timer -= delta
 	else:
+		# Restore collision if it was disabled by early fall hazard protection
+		if not is_falling_out and collision_layer == 0:
+			collision_layer = 1
+			collision_mask = 2 | 16
 		coyote_timer = COYOTE_TIME
 		jumps_remaining = MAX_JUMPS
 
@@ -189,11 +222,15 @@ func _physics_process(delta: float) -> void:
 		coyote_timer = 0.0
 		jump_buffer_timer = 0.0
 		jumps_remaining = MAX_JUMPS - 1
+		if jump_sfx:
+			jump_sfx.play()
 	# --- Double jump (air) ---
 	elif Input.is_action_just_pressed("jump") and jumps_remaining > 0 and coyote_timer <= 0.0:
 		velocity.y = JUMP_VELOCITY * DOUBLE_JUMP_MULTIPLIER
 		jumps_remaining -= 1
 		jump_buffer_timer = 0.0
+		if double_jump_sfx:
+			double_jump_sfx.play()
 
 	# Variable jump height: cut jump short on release
 	if Input.is_action_just_released("jump") and velocity.y < 0:
@@ -207,28 +244,16 @@ func _physics_process(delta: float) -> void:
 	# --- Update score ---
 	GameManager.update_score_from_distance(global_position.x - start_x)
 
-	# --- Fall death ---
-	if global_position.y > 1000:
-		die("fall")
-
-	# --- Bug stomp check (only when "code" powerup active) ---
-	if active_powerup == "code" and velocity.y > 0:
-		_check_bug_stomp()
-
-## Check if rocket is stomping a bug from above
-func _check_bug_stomp() -> void:
-	for i in get_slide_collision_count():
-		var col = get_slide_collision(i)
-		var collider = col.get_collider()
-		if collider and collider.is_in_group("bugs"):
-			if collider.has_method("die"):
-				collider.die()
+	# (Bug stomp removed — power-ups are now one-time death evades)
 
 ## Player death — cause: "bug", "fall", or ""
 func die(cause: String = "") -> void:
 	if is_dead:
 		return
 	is_dead = true
+	if cause == "fall":
+		GameManager.on_player_death(cause)
+		return
 	# Visual feedback
 	if sprite:
 		sprite.modulate = Color(1, 0.3, 0.3, 0.7)
@@ -242,60 +267,40 @@ func die(cause: String = "") -> void:
 	# Notify game manager with cause
 	GameManager.on_player_death(cause)
 
-## Take damage from hazard — ignored if "code" powerup is active and it's a bug
-func take_damage(cause: String = "bug") -> void:
+## Take damage from hazard. Returns true if player survived (consumed a charge).
+func take_damage(cause: String = "bug") -> bool:
 	if is_dead:
-		return
-	if active_powerup == "code" and cause == "bug":
-		# Bug stomp instead of dying — also handled above, but guard here too
-		return
+		return false
+	if cause == "bug" and has_code_charge:
+		has_code_charge = false
+		emit_signal("powerup_changed", "code", false)
+		return true
+	if cause == "server" and has_cpu_charge:
+		has_cpu_charge = false
+		emit_signal("powerup_changed", "cpu", false)
+		return true
 	die(cause)
+	return false
 
 # ── PowerUp System ─────────────────────────────────────────────
+signal video_key_collected
 
 ## Called by PowerUp.gd when the player touches a collectible
-func apply_powerup(type: String, duration: float) -> void:
-	active_powerup = type
-	powerup_timer = duration
-	emit_signal("powerup_changed", active_powerup, powerup_timer)
-
+func apply_powerup(type: String, _duration: float) -> void:
 	match type:
-		"speed":
-			current_speed = min(current_speed * 1.5, MAX_SPEED)
-		"jump":
-			pass  # Jump boost handled elsewhere if needed
-		"invulnerability":
-			collision_mask = 2  # Only environment, skip hazards
 		"code":
-			# Enable bug-stomping: re-enable collision with bugs (layer 16)
-			# but we handle stomp in _check_bug_stomp via group, keep mask as-is
-			if sprite:
-				sprite.modulate = Color(0.5, 1.0, 0.5)  # Green glow
+			has_code_charge = true
+			emit_signal("powerup_changed", "code", true)
 		"cpu":
-			if sprite:
-				sprite.modulate = Color(0.7, 0.9, 1.0)  # Blue glow
+			has_cpu_charge = true
+			emit_signal("powerup_changed", "cpu", true)
+		"key":
+			emit_signal("video_key_collected")
 
-func _deactivate_powerup() -> void:
-	match active_powerup:
-		"speed":
-			pass  # Speed will naturally recalculate from distance
-		"invulnerability":
-			collision_mask = 2 | 16  # Restore hazard detection
-		"code":
-			if sprite:
-				sprite.modulate = Color.WHITE
-		"cpu":
-			if sprite:
-				sprite.modulate = Color.WHITE
-
-	active_powerup = ""
-	powerup_timer = 0.0
-	emit_signal("powerup_changed", "", 0.0)
-
-## Returns true when the code skill-up is active (used by spawner/bugs)
+## Returns true when the code charge is available (used by spawner/bugs)
 func has_code_powerup() -> bool:
-	return active_powerup == "code"
+	return has_code_charge
 
-## Returns true when the cpu skill-up is active (used by spawner/servers)
+## Returns true when the cpu charge is available (used by spawner/servers)
 func has_cpu_powerup() -> bool:
-	return active_powerup == "cpu"
+	return has_cpu_charge

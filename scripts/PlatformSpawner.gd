@@ -33,12 +33,17 @@ enum Pattern {
 	FLOATING_CHAIN,
 	OBSTACLE_CORRIDOR,
 	OBSTACLE_GAP_COMBO,
-	MULTI_OBSTACLE_FIELD
+	MULTI_OBSTACLE_FIELD,
+	KEY_EASY
 }
 
+# Key pattern — easy section every 1000 points
+var _next_key_score: int = 1000
+var _key_chunks_remaining: int = 0
+
 # Server settings
-const SERVER_WIDTH: float = 50.0
-const SERVER_HEIGHT: float = 40.0
+const SERVER_WIDTH: float = 48.0
+const SERVER_HEIGHT: float = 48.0
 
 # State
 var next_chunk_x: float = 0.0
@@ -63,9 +68,23 @@ func _ready() -> void:
 	
 	# Connect to game state
 	GameManager.state_changed.connect(_on_state_changed)
+	GameManager.score_changed.connect(_on_score_changed)
 
-func _on_state_changed(_new_state: GameManager.State) -> void:
-	pass
+func _on_state_changed(new_state: GameManager.State) -> void:
+	match new_state:
+		GameManager.State.PLAYING:
+			_next_key_score = 1000
+			_key_chunks_remaining = 0
+		GameManager.State.TITLE:
+			_next_key_score = 1000
+			_key_chunks_remaining = 0
+
+func _on_score_changed(score: int) -> void:
+	if GameManager.current_state != GameManager.State.PLAYING:
+		return
+	if score >= _next_key_score and _key_chunks_remaining == 0:
+		_key_chunks_remaining = 8
+		_next_key_score += 1000
 
 func _process(delta: float) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
@@ -152,10 +171,35 @@ func _generate_chunk(chunk_x: float) -> void:
 	var difficulty: int = _get_difficulty()
 	var patterns := _get_available_patterns(difficulty)
 	
-	# First 2 chunks (1600px, roughly 5 seconds at 300px/s) are always flat ground
+	# Chunk 0: intro flat, Chunks 1-2: movement tutorials, Chunks 3-4: powerup tutorials, Chunk 5: cooldown flat
 	var pattern: Pattern
-	if chunk_x < CHUNK_WIDTH * 2:
-		pattern = Pattern.FLAT_GROUND
+	if chunk_x < CHUNK_WIDTH:
+		_build_flat_ground(chunk)
+		return
+	elif chunk_x < CHUNK_WIDTH * 2:
+		_build_jump_tutorial(chunk)
+		return
+	elif int(chunk_x / CHUNK_WIDTH) == 2:
+		_build_doublejump_tutorial(chunk)
+		return
+	elif int(chunk_x / CHUNK_WIDTH) == 3:
+		_build_code_tutorial(chunk)
+		return
+	elif int(chunk_x / CHUNK_WIDTH) == 4:
+		_build_cpu_tutorial(chunk)
+		return
+	elif int(chunk_x / CHUNK_WIDTH) == 5:
+		_build_flat_ground(chunk)
+		return
+	elif _key_chunks_remaining > 0:
+		if _key_chunks_remaining == 8:
+			last_platform_y = GROUND_Y
+		var spawn_key: bool = _key_chunks_remaining == 5
+		_build_key_easy(chunk)
+		_key_chunks_remaining -= 1
+		if spawn_key:
+			_spawn_key_powerup(chunk, chunk_x)
+		return
 	else:
 		pattern = patterns[rng.randi_range(0, patterns.size() - 1)]
 	
@@ -187,30 +231,182 @@ func _generate_chunk(chunk_x: float) -> void:
 
 func _build_flat_ground(chunk: Node2D) -> void:
 	_create_platform(chunk, 0, last_platform_y, CHUNK_WIDTH)
-	
-	# Tutorial panel 1 — first chunk (x=0): Jump instruction
-	if chunk.global_position.x == 0:
-		_create_tutorial_panel(
-			chunk,
-			"Pulsa el botón para Saltar",
-			"res://assets/rocket/Jump_2.png",
-			Vector2(CHUNK_WIDTH * 0.50, last_platform_y - 165)
-		)
-	
-	# Tutorial panel 2 — second chunk (x=800): Double-jump instruction
-	elif chunk.global_position.x == CHUNK_WIDTH:
-		_create_tutorial_panel(
-			chunk,
-			"Pulsa de nuevo para\ndoble salto",
-			"res://assets/rocket/DoubleJump_3.png",
-			Vector2(CHUNK_WIDTH * 0.50, last_platform_y - 165)
-		)
+
+## Jump tutorial — first chunk: small gap with jump instruction panel.
+func _build_jump_tutorial(chunk: Node2D) -> void:
+	var gap_size: float = 80.0
+	var gap_start: float = 730.0
+
+	# Ground before gap
+	_create_platform(chunk, 0, last_platform_y, gap_start)
+	# Ground after gap
+	var after_start: float = gap_start + gap_size
+	_create_platform(chunk, after_start, last_platform_y, CHUNK_WIDTH - after_start)
+
+	# Tutorial panel — jump instruction before the gap
+	_create_tutorial_panel(
+		chunk,
+		"Pulsa el botón para Saltar",
+		"res://assets/rocket/Jump_2.png",
+		Vector2(120, last_platform_y - 165)
+	)
+
+## Double-jump tutorial — second chunk: bigger gap with double-jump instruction panel.
+func _build_doublejump_tutorial(chunk: Node2D) -> void:
+	var gap_size: float = 180.0
+	var gap_start: float = 630.0
+
+	# Ground before gap
+	_create_platform(chunk, 0, last_platform_y, gap_start)
+	# Ground after gap
+	var after_start: float = gap_start + gap_size
+	_create_platform(chunk, after_start, last_platform_y, CHUNK_WIDTH - after_start)
+
+	# Tutorial panel — double-jump instruction before the gap
+	_create_tutorial_panel(
+		chunk,
+		"Pulsa de nuevo para doble salto",
+		"res://assets/rocket/DoubleJump_3.png",
+		Vector2(30, last_platform_y - 165)
+	)
+
+## Code tutorial — powerup_code protects from bugs.
+func _build_code_tutorial(chunk: Node2D) -> void:
+	_create_platform(chunk, 0, last_platform_y, CHUNK_WIDTH)
+
+	# Tutorial panel
+	_create_powerup_tutorial_panel(
+		chunk,
+		"SkillUp: Programación te protege de bugs",
+		"res://assets/powerups/powerup_code.png",
+		"res://assets/bug/bug_1.png",
+		Vector2(30.0, last_platform_y - 165)
+	)
+
+	# Powerup then bug further ahead
+	_spawn_powerup(chunk, chunk.global_position.x + 250.0, GROUND_Y - 60.0, "code")
+	_create_obstacle(chunk, 650.0, last_platform_y - PLATFORM_HEIGHT * 0.5, "bug")
+
+## CPU tutorial — powerup_cpu protects from servers.
+func _build_cpu_tutorial(chunk: Node2D) -> void:
+	_create_platform(chunk, 0, last_platform_y, CHUNK_WIDTH)
+
+	# Tutorial panel
+	_create_powerup_tutorial_panel(
+		chunk,
+		"SkillUp: Hardware te ayuda a dominar servidores",
+		"res://assets/powerups/powerup_cpu.png",
+		"res://assets/server/server_red.png",
+		Vector2(30.0, last_platform_y - 165)
+	)
+
+	# Powerup then server further ahead
+	_spawn_powerup(chunk, chunk.global_position.x + 250.0, GROUND_Y - 60.0, "cpu")
+	_create_obstacle(chunk, 650.0, last_platform_y - PLATFORM_HEIGHT * 0.5, "server")
+
+## Creates a tutorial panel: text + icon → icon.
+func _create_powerup_tutorial_panel(chunk: Node2D, text: String, icon1_path: String, icon2_path: String, pos: Vector2) -> void:
+	# Background panel for contrast
+	var bg := PanelContainer.new()
+	bg.position = pos
+
+	var bg_style := StyleBoxFlat.new()
+	bg_style.bg_color = Color(0, 0, 0, 0.55)
+	bg_style.content_margin_left = 10
+	bg_style.content_margin_right = 10
+	bg_style.content_margin_top = 6
+	bg_style.content_margin_bottom = 6
+	bg_style.corner_radius_top_left = 8
+	bg_style.corner_radius_top_right = 8
+	bg_style.corner_radius_bottom_left = 8
+	bg_style.corner_radius_bottom_right = 8
+	bg_style.anti_aliasing = true
+	bg.add_theme_stylebox_override("panel", bg_style)
+
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 16)
+
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 22)
+	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+
+	row.add_child(_make_icon_arrow_icon(icon1_path, icon2_path))
+
+	bg.add_child(row)
+	chunk.add_child(bg)
+
+## Creates an [Icon] → [Icon] horizontal group.
+func _make_icon_arrow_icon(icon1_path: String, icon2_path: String) -> HBoxContainer:
+	var hbox := HBoxContainer.new()
+	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox.add_theme_constant_override("separation", 8)
+
+	hbox.add_child(_make_circle_icon(icon1_path, 44))
+
+	var arrow := Label.new()
+	arrow.text = "→"
+	arrow.add_theme_font_size_override("font_size", 28)
+	arrow.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0, 0.95))
+	arrow.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hbox.add_child(arrow)
+
+	hbox.add_child(_make_circle_icon(icon2_path, 44))
+	return hbox
+
+## Creates a circular icon panel.
+func _make_circle_icon(img_path: String, size: int) -> Panel:
+	var circle := Panel.new()
+	circle.custom_minimum_size = Vector2(size, size)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color     = Color(0.08, 0.08, 0.14, 0.88)
+	style.border_color = Color(0.55, 0.85, 1.0, 0.95)
+	style.set_border_width_all(2)
+	var r: int = int(size / 2.0)
+	style.corner_radius_top_left     = r
+	style.corner_radius_top_right    = r
+	style.corner_radius_bottom_left  = r
+	style.corner_radius_bottom_right = r
+	style.anti_aliasing = true
+	circle.add_theme_stylebox_override("panel", style)
+
+	var tex_rect := TextureRect.new()
+	if ResourceLoader.exists(img_path):
+		tex_rect.texture = load(img_path)
+	tex_rect.anchor_left   = 0.0; tex_rect.anchor_top    = 0.0
+	tex_rect.anchor_right  = 1.0; tex_rect.anchor_bottom = 1.0
+	tex_rect.offset_left   =  6;  tex_rect.offset_top    =  6
+	tex_rect.offset_right  = -6;  tex_rect.offset_bottom = -6
+	tex_rect.stretch_mode  = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex_rect.expand_mode   = TextureRect.EXPAND_IGNORE_SIZE
+	circle.add_child(tex_rect)
+	return circle
 
 ## Creates a styled tutorial panel: [TEXT] then [CIRCLE IMAGE] (image "adelante").
 func _create_tutorial_panel(chunk: Node2D, message: String, image_path: String, pos: Vector2) -> void:
-	# Root row — laid out horizontally, positioned in world space
+	# Background panel for contrast
+	var bg := PanelContainer.new()
+	bg.position = pos
+
+	var bg_style := StyleBoxFlat.new()
+	bg_style.bg_color = Color(0, 0, 0, 0.55)
+	bg_style.content_margin_left = 10
+	bg_style.content_margin_right = 10
+	bg_style.content_margin_top = 6
+	bg_style.content_margin_bottom = 6
+	bg_style.corner_radius_top_left = 8
+	bg_style.corner_radius_top_right = 8
+	bg_style.corner_radius_bottom_left = 8
+	bg_style.corner_radius_bottom_right = 8
+	bg_style.anti_aliasing = true
+	bg.add_theme_stylebox_override("panel", bg_style)
+
+	# Root row — laid out horizontally
 	var row := HBoxContainer.new()
-	row.position = pos
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 14)
 
@@ -219,9 +415,6 @@ func _create_tutorial_panel(chunk: Node2D, message: String, image_path: String, 
 	label.text = message
 	label.add_theme_font_size_override("font_size", 26)
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
-	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
-	label.add_theme_constant_override("shadow_offset_x", 3)
-	label.add_theme_constant_override("shadow_offset_y", 3)
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
@@ -257,7 +450,8 @@ func _create_tutorial_panel(chunk: Node2D, message: String, image_path: String, 
 	circle.add_child(tex_rect)
 
 	row.add_child(circle)
-	chunk.add_child(row)
+	bg.add_child(row)
+	chunk.add_child(bg)
 
 func _build_ground_gap(chunk: Node2D, large: bool) -> void:
 	var gap_size: float = MIN_GAP_WIDTH if not large else rng.randf_range(150.0, MAX_GAP_WIDTH)
@@ -355,6 +549,29 @@ func _build_multi_obstacle_field(chunk: Node2D) -> void:
 			_create_obstacle(chunk, cluster_x + j * obs_unit - cluster_size * OBSTACLE_OFFSET,
 				last_platform_y - PLATFORM_HEIGHT * 0.5)
 
+# ── Key Pattern ───────────────────────────────────────────────
+
+## Very easy section — almost flat with tiny gaps, no obstacles.
+func _build_key_easy(chunk: Node2D) -> void:
+	var x: float = 0.0
+	while x < CHUNK_WIDTH - 60.0:
+		var plat_width: float = rng.randf_range(180.0, 300.0)
+		plat_width = mini(plat_width, CHUNK_WIDTH - x)
+		var plat_y: float = last_platform_y + rng.randf_range(-8.0, 8.0)
+		plat_y = clampf(plat_y, GROUND_Y - 30.0, GROUND_Y + 10.0)
+		_create_platform(chunk, x, plat_y, plat_width)
+		x += plat_width + rng.randf_range(25.0, 40.0)
+		last_platform_y = plat_y
+
+func _spawn_key_powerup(chunk: Node2D, chunk_x: float) -> void:
+	if not powerup_scene:
+		return
+	var pu: Area2D = powerup_scene.instantiate()
+	pu.type = "key"
+	pu.duration = 0.0
+	pu.position = Vector2(120.0, last_platform_y - PLATFORM_HEIGHT * 0.5 - 60.0)
+	chunk.add_child(pu)
+
 # ── Node Creation Helpers ─────────────────────────────────────
 
 func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: float) -> void:
@@ -433,13 +650,15 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		chunk.add_child(bug_area)
 		
 	elif type == "server":
-		var num_servers: int = rng.randi_range(1, 3)
+		var num_servers: int = rng.randi_range(1, 2)
+		var cluster_group: String = "server_cluster_%d" % int(local_x + OBSTACLE_OFFSET)
 		for i in num_servers:
 			var server_y: float = platform_surface_y - (i * SERVER_HEIGHT) - SERVER_HEIGHT * 0.5
 			var server := Area2D.new()
 			server.position = Vector2(local_x + OBSTACLE_OFFSET, server_y)
 			server.collision_layer = 16  # Hazards
 			server.collision_mask = 1    # Player
+			server.add_to_group(cluster_group)
 			
 			var col := CollisionShape2D.new()
 			var shape := RectangleShape2D.new()
@@ -463,10 +682,9 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 	if not body.has_method("take_damage"):
 		return
-	# If player has the code powerup active, stomp the bug instead of taking damage
-	if body.has_method("has_code_powerup") and body.has_code_powerup():
+	# take_damage returns true if the player survived by consuming a charge
+	if body.take_damage("bug"):
 		if spike.has_method("queue_free") and not spike.is_queued_for_deletion():
-			# Squash the bug visually
 			var bug_sprite: Sprite2D = null
 			for child in spike.get_children():
 				if child is Sprite2D:
@@ -479,19 +697,31 @@ func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 				tween.tween_property(bug_sprite, "scale", Vector2(1.5, 0.1), 0.15)
 				tween.tween_property(bug_sprite, "modulate:a", 0.0, 0.2)
 			tween.tween_callback(spike.queue_free)
-		return
-	body.take_damage()
 
 
 
 func _on_server_body_entered(body: Node2D, server: Area2D) -> void:
 	if not body.has_method("take_damage"):
 		return
-		
-	# Si el jugador tiene el powerup de la CPU, atraviesa y cambia a azul
-	if body.has_method("has_cpu_powerup") and body.has_cpu_powerup():
-		server.collision_layer = 0
-		server.collision_mask = 0
+	# take_damage returns true if the player survived by consuming a charge
+	if body.take_damage("server"):
+		# Disable all stacked servers in this cluster so the player doesn't
+		# get hit twice by the same stack
+		for group in server.get_groups():
+			if group.begins_with("server_cluster_"):
+				for s in get_tree().get_nodes_in_group(group):
+					s.collision_layer = 0
+					s.collision_mask = 0
+					if s != server:
+						var sibling_sprite: Sprite2D = null
+						for child in s.get_children():
+							if child is Sprite2D:
+								sibling_sprite = child
+								break
+						if sibling_sprite:
+							var tween := s.create_tween()
+							tween.tween_property(sibling_sprite, "modulate", Color(0.2, 0.75, 1.0), 0.2)
+				break
 		var server_sprite: Sprite2D = null
 		for child in server.get_children():
 			if child is Sprite2D:
@@ -499,7 +729,4 @@ func _on_server_body_entered(body: Node2D, server: Area2D) -> void:
 				break
 		if server_sprite:
 			var tween := server.create_tween()
-			tween.tween_property(server_sprite, "modulate", Color(0.7, 0.9, 1.0), 0.2)
-		return
-		
-	body.take_damage("server")
+			tween.tween_property(server_sprite, "modulate", Color(0.2, 0.75, 1.0), 0.2)

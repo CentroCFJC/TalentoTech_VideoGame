@@ -1,10 +1,14 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1"]
 [ext_resource type="Script" path="res://scripts/HUD.gd" id="2"]
 [ext_resource type="Script" path="res://scripts/PlatformSpawner.gd" id="3"]
 [ext_resource type="Script" path="res://scripts/Hazard.gd" id="4"]
-[ext_resource type="Texture2D" path="res://assets/background/fondo_antioquia.png" id="5"]
+[ext_resource type="Texture2D" path="res://assets/background/antioquia.jpeg" id="5"]
+[ext_resource type="Script" path="res://scripts/Background.gd" id="6"]
+[ext_resource type="AudioStream" path="res://assets/audio/music/loop.mp3" id="7"]
+[ext_resource type="Script" path="res://scripts/MusicPlayer.gd" id="8"]
+[ext_resource type="Texture2D" path="res://assets/logos/logo.png" id="9"]
 
 [sub_resource type="RectangleShape2D" id="killzone_shape"]
 size = Vector2(200000, 40)
@@ -13,6 +17,7 @@ size = Vector2(200000, 40)
 
 [node name="Background" type="ParallaxBackground" parent="."]
 scroll_ignore_camera_zoom = true
+script = ExtResource("6")
 
 [node name="Layer" type="ParallaxLayer" parent="Background"]
 motion_mirroring = Vector2(1280, 0)
@@ -78,11 +83,20 @@ layout_mode = 2
 theme_override_constants/separation = 20
 alignment = 1
 
+[node name="TitleLogo" type="TextureRect" parent="HUD/TitlePanel/VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 350)
+texture = ExtResource("9")
+stretch_mode = 5
+expand_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 3
+
 [node name="TitleLabel" type="Label" parent="HUD/TitlePanel/VBoxContainer"]
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 52
-text = "★ INFINITE RUNNER ★"
+text = "TalentoTech: SkillUp"
 horizontal_alignment = 1
 
 [node name="BestScoreLabel" type="Label" parent="HUD/TitlePanel/VBoxContainer"]
@@ -111,6 +125,14 @@ grow_vertical = 2
 layout_mode = 2
 theme_override_constants/separation = 15
 alignment = 1
+
+[node name="LogoTexture" type="TextureRect" parent="HUD/GameOverPanel/VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 200)
+texture = ExtResource("9")
+stretch_mode = 5
+expand_mode = 2
+size_flags_horizontal = 4
 
 [node name="GameOverLabel" type="Label" parent="HUD/GameOverPanel/VBoxContainer"]
 layout_mode = 2
@@ -186,3 +208,9 @@ theme_override_colors/font_color = Color(1, 0.9, 0.3, 1)
 theme_override_font_sizes/font_size = 16
 text = "10.0 s"
 horizontal_alignment = 1
+
+[node name="MusicPlayer" type="AudioStreamPlayer" parent="."]
+stream = ExtResource("7")
+volume_db = -6.0
+autoplay = true
+script = ExtResource("8")
