@@ -213,7 +213,10 @@ func _on_video_key_collected() -> void:
 	if not _video_player.finished.is_connected(_close_video):
 		_video_player.finished.connect(_close_video)
 
+	_set_music_video_duck(true)
+
 func _close_video() -> void:
+	_set_music_video_duck(false)
 	_video_timer.stop()
 	if _video_player:
 		_video_player.stream = null
@@ -225,6 +228,11 @@ func _close_video() -> void:
 
 	if _best_panel and is_instance_valid(_best_panel):
 		_best_panel.show()
+
+func _set_music_video_duck(active: bool) -> void:
+	var music = get_tree().get_first_node_in_group("music")
+	if music and music.has_method("set_video_reduction"):
+		music.set_video_reduction(active)
 
 # ── PowerUp HUD — top-left box with Score + two skillup slots ──
 

@@ -703,6 +703,9 @@ func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 func _on_server_body_entered(body: Node2D, server: Area2D) -> void:
 	if not body.has_method("take_damage"):
 		return
+	# Already disabled by another server in the same cluster (hit simultaneously)
+	if server.collision_layer == 0:
+		return
 	# take_damage returns true if the player survived by consuming a charge
 	if body.take_damage("server"):
 		# Disable all stacked servers in this cluster so the player doesn't
