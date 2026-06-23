@@ -4,7 +4,7 @@
 [ext_resource type="Texture2D" path="res://assets/powerup.png" id="2"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_powerup"]
-radius = 14.0
+radius = 22.0
 
 [node name="PowerUp" type="Area2D"]
 collision_layer = 8

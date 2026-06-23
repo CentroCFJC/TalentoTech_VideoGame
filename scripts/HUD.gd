@@ -41,6 +41,9 @@ var _slot_cpu_status: Label = null
 # Video playback
 var _video_panel: PanelContainer = null
 var _video_player: VideoStreamPlayer = null
+var _skip_panel: PanelContainer = null
+var _skip_label: Label = null
+var _skip_tween: Tween = null
 
 func _ready() -> void:
 	GameManager.score_changed.connect(_on_score_changed)
@@ -53,6 +56,8 @@ func _ready() -> void:
 	_setup_best_panel()
 	_setup_video_panel()
 	_try_connect_player()
+
+	process_mode = PROCESS_MODE_ALWAYS
 
 	gameover_vbox = $GameOverPanel/VBoxContainer
 	_setup_game_over_card()
@@ -85,6 +90,7 @@ func _show_title_screen() -> void:
 		_best_panel.hide()
 	if _video_panel:
 		_video_panel.hide()
+	_skip_panel.hide()
 
 	title_best_label.text = "Best Score: %d" % GameManager.best_score
 	_start_blink(title_prompt)
@@ -99,6 +105,7 @@ func _show_playing_hud() -> void:
 		_best_panel.show()
 	if _video_panel:
 		_video_panel.hide()
+	_skip_panel.hide()
 
 	_update_score(GameManager.score)
 	if _panel_best_label:
@@ -113,6 +120,7 @@ func _show_game_over() -> void:
 	powerup_panel.hide()
 	if _best_panel:
 		_best_panel.hide()
+	_skip_panel.hide()
 
 	gameover_score_label.text = "Score: %d" % GameManager.score
 	gameover_best_label.text = "Best: %d" % GameManager.best_score
@@ -157,9 +165,7 @@ func _start_blink(label: Label) -> void:
 	tween.tween_property(label, "modulate:a", 0.3, 0.6).set_trans(Tween.TRANS_SINE)
 	tween.tween_property(label, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
 
-# ── Video panel (top-right corner, replaces best panel) ───────
-
-var _video_timer: Timer = null
+# ── Video panel (full-screen, replaces best panel) ────────────
 
 func _setup_video_panel() -> void:
 	_video_panel = PanelContainer.new()
@@ -172,59 +178,130 @@ func _setup_video_panel() -> void:
 	style.set_border_width_all(0)
 	_video_panel.add_theme_stylebox_override("panel", style)
 
-	_video_panel.anchors_preset = Control.PRESET_TOP_RIGHT
-	_video_panel.offset_left  = -280
-	_video_panel.offset_top   = 10
-	_video_panel.offset_right = -10
-	_video_panel.offset_bottom = 150
+	_video_panel.anchors_preset = Control.PRESET_FULL_RECT
+	_video_panel.offset_left  = 60
+	_video_panel.offset_top   = 60
+	_video_panel.offset_right = -60
+	_video_panel.offset_bottom = -60
 
 	_video_player = VideoStreamPlayer.new()
 	_video_player.name = "KeyVideoPlayer"
 	_video_player.autoplay = false
 	_video_player.expand = true
-	_video_player.custom_minimum_size = Vector2(270, 140)
+	_video_player.process_mode = PROCESS_MODE_ALWAYS
 	_video_panel.add_child(_video_player)
 
-	_video_timer = Timer.new()
-	_video_timer.one_shot = true
-	_video_timer.timeout.connect(_close_video)
-	add_child(_video_timer)
+	_setup_skip_label()
+
+func _setup_skip_label() -> void:
+	_skip_panel = PanelContainer.new()
+	_skip_panel.name = "SkipPanel"
+	
+	_skip_panel.anchor_top = 1.0
+	_skip_panel.anchor_bottom = 1.0
+	_skip_panel.anchor_left = 0.0
+	_skip_panel.anchor_right = 1.0
+	
+	_skip_panel.offset_left = 60
+	_skip_panel.offset_right = -60
+	_skip_panel.offset_top = -55
+	_skip_panel.offset_bottom = -5
+	
+	_skip_panel.z_index = 100
+	_skip_panel.process_mode = Node.PROCESS_MODE_ALWAYS
+	_skip_panel.hide()
+	add_child(_skip_panel)
+
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	panel_style.set_border_width_all(0)
+	panel_style.content_margin_left = 24
+	panel_style.content_margin_right = 24
+	panel_style.content_margin_top = 10
+	panel_style.content_margin_bottom = 10
+	_skip_panel.add_theme_stylebox_override("panel", panel_style)
+
+	_skip_label = Label.new()
+	_skip_label.text = "Presiona el botón para omitir"
+	_skip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_skip_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	_skip_label.add_theme_font_size_override("font_size", 22)
+	_skip_panel.add_child(_skip_label)
 
 func _on_video_key_collected() -> void:
 	if not _video_panel or not is_instance_valid(_video_panel):
 		return
-	if _video_panel.visible:
+
+	var files := DirAccess.get_files_at("res://assets/videos/")
+	var ogv_files: Array[String] = []
+	for f in files:
+		if f.ends_with(".ogv"):
+			ogv_files.append("res://assets/videos/" + f)
+
+	if ogv_files.is_empty():
 		return
 
-	_video_timer.stop()
-
-	var path = "res://assets/videos/Sebastian_Camacho.ogv"
-	_video_player.stream = load(path)
+	_video_player.stream = load(ogv_files.pick_random())
 
 	if _best_panel and is_instance_valid(_best_panel):
 		_best_panel.hide()
 
+	_video_panel.modulate = Color(1, 1, 1, 0)
 	_video_panel.show()
+	var fade_tween := create_tween()
+	fade_tween.tween_property(_video_panel, "modulate", Color.WHITE, 0.3)
+
 	if _video_player.stream:
+		_skip_panel.hide()
+		if _skip_tween:
+			_skip_tween.kill()
+		
+		_skip_tween = create_tween().bind_node(_skip_panel)
+		_skip_tween.tween_interval(5.0)
+		_skip_tween.tween_callback(func():
+			_skip_panel.show()
+			_skip_panel.modulate.a = 1.0
+			_skip_tween = create_tween().bind_node(_skip_panel).set_loops()
+			_skip_tween.tween_property(_skip_panel, "modulate:a", 0.3, 0.6).set_trans(Tween.TRANS_SINE)
+			_skip_tween.tween_property(_skip_panel, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+		)
+		
 		_video_player.play()
 
-	_video_timer.start(50.0)
+	get_tree().paused = true
 
 	if not _video_player.finished.is_connected(_close_video):
 		_video_player.finished.connect(_close_video)
 
 	_set_music_video_duck(true)
 
+func _input(event: InputEvent) -> void:
+	if _video_panel and _video_panel.visible and event.is_action_pressed("ui_accept"):
+		_close_video()
+		get_viewport().set_input_as_handled()
+
 func _close_video() -> void:
-	_set_music_video_duck(false)
-	_video_timer.stop()
+	get_tree().paused = false
+
+	var music = get_tree().get_first_node_in_group("music")
+	if music and music.has_method("fade_out_video_reduction"):
+		music.fade_out_video_reduction()
+	else:
+		_set_music_video_duck(false)
+
 	if _video_player:
 		_video_player.stream = null
 		if _video_player.finished.is_connected(_close_video):
 			_video_player.finished.disconnect(_close_video)
 
 	if _video_panel and is_instance_valid(_video_panel):
+		_video_panel.modulate = Color.WHITE
 		_video_panel.hide()
+
+	if _skip_tween:
+		_skip_tween.kill()
+		_skip_tween = null
+	_skip_panel.hide()
 
 	if _best_panel and is_instance_valid(_best_panel):
 		_best_panel.show()

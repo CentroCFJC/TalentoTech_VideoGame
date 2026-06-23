@@ -23,6 +23,8 @@ const MAX_DIFFICULTY: int = 4
 # Obstacle offset (horizontal half-width used for centering)
 const OBSTACLE_OFFSET: float = 30.0
 
+const BUG_MOVE_SPEED: float = 25.0
+
 # Patterns enum
 enum Pattern {
 	FLAT_GROUND,
@@ -114,6 +116,18 @@ func _process(delta: float) -> void:
 	for chunk in to_remove:
 		active_chunks.erase(chunk)
 		chunk.queue_free()
+
+	# Move bugs slowly forward (toward player)
+	for bug in get_tree().get_nodes_in_group("bugs"):
+		bug.global_position.x -= BUG_MOVE_SPEED * delta
+
+	var time := Time.get_ticks_msec() / 1000.0
+	for fly in get_tree().get_nodes_in_group("bugs_fly"):
+		fly.global_position.x -= BUG_MOVE_SPEED * 1.3 * delta
+		if fly.has_meta("base_y") and fly.has_meta("time_offset"):
+			var base_y: float = fly.get_meta("base_y")
+			var time_offset: float = fly.get_meta("time_offset")
+			fly.position.y = base_y + sin(time * 3.5 + time_offset) * 20.0
 
 func _spawn_powerup(chunk: Node2D, world_x: float, world_y: float, p_type: String) -> void:
 	if not powerup_scene:
@@ -551,25 +565,18 @@ func _build_multi_obstacle_field(chunk: Node2D) -> void:
 
 # ── Key Pattern ───────────────────────────────────────────────
 
-## Very easy section — almost flat with tiny gaps, no obstacles.
+## Straight flat ground — no difficulty, key in the middle.
 func _build_key_easy(chunk: Node2D) -> void:
-	var x: float = 0.0
-	while x < CHUNK_WIDTH - 60.0:
-		var plat_width: float = rng.randf_range(180.0, 300.0)
-		plat_width = mini(plat_width, CHUNK_WIDTH - x)
-		var plat_y: float = last_platform_y + rng.randf_range(-8.0, 8.0)
-		plat_y = clampf(plat_y, GROUND_Y - 30.0, GROUND_Y + 10.0)
-		_create_platform(chunk, x, plat_y, plat_width)
-		x += plat_width + rng.randf_range(25.0, 40.0)
-		last_platform_y = plat_y
+	_create_platform(chunk, 0, GROUND_Y, CHUNK_WIDTH)
+	last_platform_y = GROUND_Y
 
-func _spawn_key_powerup(chunk: Node2D, chunk_x: float) -> void:
+func _spawn_key_powerup(chunk: Node2D, _chunk_x: float) -> void:
 	if not powerup_scene:
 		return
 	var pu: Area2D = powerup_scene.instantiate()
 	pu.type = "key"
 	pu.duration = 0.0
-	pu.position = Vector2(120.0, last_platform_y - PLATFORM_HEIGHT * 0.5 - 60.0)
+	pu.position = Vector2(CHUNK_WIDTH * 0.5, last_platform_y - PLATFORM_HEIGHT * 0.5 - 60.0)
 	chunk.add_child(pu)
 
 # ── Node Creation Helpers ─────────────────────────────────────
@@ -593,14 +600,14 @@ func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: floa
 	var visual := ColorRect.new()
 	visual.size = Vector2(width, PLATFORM_HEIGHT)
 	visual.position = Vector2(-width * 0.5, -PLATFORM_HEIGHT * 0.5)
-	visual.color = Color(0.28, 0.5, 0.25, 1)  # Green ground color
+	visual.color = Color(0.15, 0.35, 0.7, 1)  # Blue ground color
 	platform.add_child(visual)
 	
 	# Visual — top edge (grass)
 	var grass := ColorRect.new()
 	grass.size = Vector2(width, 6.0)
 	grass.position = Vector2(-width * 0.5, -PLATFORM_HEIGHT * 0.5)
-	grass.color = Color(0.35, 0.7, 0.3, 1)  # Bright green
+	grass.color = Color(0.3, 0.65, 1.0, 1)  # Bright blue
 	platform.add_child(grass)
 	
 	chunk.add_child(platform)
@@ -613,8 +620,16 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 			return
 		elif GameManager.score < 150:
 			type = "bug"
-		else:
+		elif GameManager.score < 400:
 			type = "server" if rng.randf() < 0.5 else "bug"
+		else:
+			var roll = rng.randf()
+			if roll < 0.35:
+				type = "server"
+			elif roll < 0.70:
+				type = "bug"
+			else:
+				type = "bug_fly"
 			
 	if type == "server":
 		if world_x - last_server_spawn_x < 1000.0:
@@ -627,7 +642,7 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		
 		var bug_scale := Vector2(0.65, 0.65)
 		var bug_height: float = 65.0 * bug_scale.y
-		var bug_center_y: float = platform_surface_y - (bug_height * 0.5) + 6.0
+		var bug_center_y: float = platform_surface_y - (bug_height * 0.5) + 12.0
 		
 		bug_area.position = Vector2(local_x + OBSTACLE_OFFSET, bug_center_y)
 		bug_area.collision_layer = 16  # Hazards (Layer 5)
@@ -640,14 +655,58 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		col.shape = shape
 		bug_area.add_child(col)
 		
-		var sprite := Sprite2D.new()
-		sprite.texture = load("res://assets/bug/bug_1.png")
+		var sprite := AnimatedSprite2D.new()
+		var sprite_frames := SpriteFrames.new()
+		sprite_frames.add_animation("idle")
+		sprite_frames.set_animation_speed("idle", 8.0)
+		sprite_frames.set_animation_loop("idle", true)
+		for i in range(1, 6):
+			var path = "res://assets/bug/B%d.png" % i
+			if FileAccess.file_exists(path) or FileAccess.file_exists(path + ".import"):
+				var tex = load(path)
+				if tex:
+					sprite_frames.add_frame("idle", tex)
+		sprite.sprite_frames = sprite_frames
+		sprite.play("idle")
 		sprite.scale = bug_scale
 		bug_area.add_child(sprite)
 		
 		bug_area.body_entered.connect(_on_spike_body_entered.bind(bug_area))
 		bug_area.monitoring = true
 		chunk.add_child(bug_area)
+		
+	elif type == "bug_fly":
+		var fly_area := Area2D.new()
+		
+		var fly_scale := Vector2(0.65, 0.65)
+		var fly_height: float = 65.0 * fly_scale.y
+		
+		var random_height_offset = rng.randf_range(50.0, 250.0)
+		var fly_center_y: float = platform_surface_y - (fly_height * 0.5) - random_height_offset
+		
+		fly_area.position = Vector2(local_x + OBSTACLE_OFFSET, fly_center_y)
+		fly_area.collision_layer = 16  # Hazards
+		fly_area.collision_mask = 1    # Player
+		fly_area.add_to_group("bugs_fly")
+		
+		fly_area.set_meta("base_y", fly_center_y)
+		fly_area.set_meta("time_offset", rng.randf() * PI * 2)
+		
+		var col := CollisionShape2D.new()
+		var shape := RectangleShape2D.new()
+		shape.size = Vector2(30, 30)
+		col.shape = shape
+		fly_area.add_child(col)
+		
+		var sprite := Sprite2D.new()
+		if ResourceLoader.exists("res://assets/bug/bug_fly.png"):
+			sprite.texture = load("res://assets/bug/bug_fly.png")
+		sprite.scale = fly_scale
+		fly_area.add_child(sprite)
+		
+		fly_area.body_entered.connect(_on_spike_body_entered.bind(fly_area))
+		fly_area.monitoring = true
+		chunk.add_child(fly_area)
 		
 	elif type == "server":
 		var num_servers: int = rng.randi_range(1, 2)
@@ -685,9 +744,9 @@ func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 	# take_damage returns true if the player survived by consuming a charge
 	if body.take_damage("bug"):
 		if spike.has_method("queue_free") and not spike.is_queued_for_deletion():
-			var bug_sprite: Sprite2D = null
+			var bug_sprite: Node2D = null
 			for child in spike.get_children():
-				if child is Sprite2D:
+				if child is AnimatedSprite2D or child is Sprite2D:
 					bug_sprite = child
 					break
 			spike.collision_layer = 0

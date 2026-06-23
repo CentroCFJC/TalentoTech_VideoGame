@@ -53,7 +53,7 @@ func _set_appearance_by_type() -> void:
 			if key_tex:
 				sprite.texture = key_tex
 			sprite.modulate = Color(1.0, 1.0, 1.0)
-			sprite.scale = Vector2(0.5, 0.5)
+			sprite.scale = Vector2(0.8, 0.8)
 
 func _start_bob_animation() -> void:
 	bob_tween = create_tween().set_loops()

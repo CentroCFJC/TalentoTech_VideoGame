@@ -1,13 +1,17 @@
 extends AudioStreamPlayer
 
-const REDUCTION_DB: float = -3.1
-const VIDEO_REDUCTION_DB: float = -2.5
-
 var _base_volume_db: float
 var _current_state: GameManager.State
-var _video_reduction: bool = false
+
+var _is_video_playing: bool = false
+var _is_fading: bool = false
+var _fade_timer: float = 0.0
+var _fade_duration: float = 2.0
+var _fade_start_linear: float = 0.0
+var _fade_end_linear: float = 0.0
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_base_volume_db = volume_db
 	_current_state = GameManager.current_state
 	finished.connect(play)
@@ -16,17 +20,62 @@ func _ready() -> void:
 	_apply_volume()
 
 func _on_state_changed(state: GameManager.State) -> void:
+	var old_state = _current_state
 	_current_state = state
+	
+	if state == GameManager.State.PLAYING and old_state != GameManager.State.PLAYING:
+		play(0.0)
+		_is_fading = false
+	
 	_apply_volume()
+
+func _process(delta: float) -> void:
+	if _is_fading:
+		_fade_timer += delta
+		if _fade_timer >= _fade_duration:
+			_is_fading = false
+			volume_db = _base_volume_db + linear_to_db(_fade_end_linear)
+		else:
+			var current_linear = lerp(_fade_start_linear, _fade_end_linear, _fade_timer / _fade_duration)
+			current_linear = max(0.0001, current_linear)
+			volume_db = _base_volume_db + linear_to_db(current_linear)
 
 func set_video_reduction(active: bool) -> void:
-	_video_reduction = active
-	_apply_volume()
+	_is_video_playing = active
+	_is_fading = false
+	if active:
+		stream_paused = true
+	else:
+		stream_paused = false
+		_apply_volume()
+
+func fade_out_video_reduction(duration: float = 2.0) -> void:
+	_is_video_playing = false
+	stream_paused = false
+	
+	var target_linear := _get_target_linear()
+	
+	_fade_start_linear = 0.0001
+	_fade_end_linear = target_linear
+	volume_db = _base_volume_db + linear_to_db(_fade_start_linear)
+	_fade_duration = duration
+	_fade_timer = 0.0
+	_is_fading = true
 
 func _apply_volume() -> void:
-	var reduction: float = 0.0
-	if _current_state != GameManager.State.PLAYING:
-		reduction += REDUCTION_DB
-	if _video_reduction:
-		reduction += VIDEO_REDUCTION_DB
-	volume_db = _base_volume_db + reduction
+	if _is_fading:
+		return
+		
+	if _is_video_playing:
+		stream_paused = true
+		return
+	else:
+		stream_paused = false
+	
+	var target_linear := _get_target_linear()
+	volume_db = _base_volume_db + linear_to_db(target_linear)
+
+func _get_target_linear() -> float:
+	if _current_state == GameManager.State.TITLE or _current_state == GameManager.State.GAME_OVER:
+		return 0.7
+	return 1.0
