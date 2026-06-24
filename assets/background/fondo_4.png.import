@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://v5gr7t4r1mbr"
-path="res://.godot/imported/antioquia.jpeg-18e26f4cfbdb5483b1e6ba475331bffe.ctex"
+uid="uid://ck47xubhdn2ru"
+path="res://.godot/imported/fondo_4.png-f3345248dfd1647bac4ad29beff94674.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/background/antioquia.jpeg"
-dest_files=["res://.godot/imported/antioquia.jpeg-18e26f4cfbdb5483b1e6ba475331bffe.ctex"]
+source_file="res://assets/background/fondo_4.png"
+dest_files=["res://.godot/imported/fondo_4.png-f3345248dfd1647bac4ad29beff94674.ctex"]
 
 [params]
 

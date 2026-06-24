@@ -55,11 +55,18 @@ var camera: Camera2D = null
 var rng := RandomNumberGenerator.new()
 var last_server_spawn_x: float = -2000.0
 
+var _mono_font: SystemFont
+
 # PowerUp spawning
 var powerup_scene: PackedScene = null
 
 func _ready() -> void:
 	rng.randomize()
+	
+	_mono_font = SystemFont.new()
+	_mono_font.font_names = PackedStringArray(["Courier New", "monospace", "Consolas", "Menlo"])
+	_mono_font.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
+	_mono_font.generate_mipmaps = true
 	
 	# Pre-load the PowerUp scene
 	if ResourceLoader.exists("res://scenes/PowerUp.tscn"):
@@ -255,7 +262,7 @@ func _build_jump_tutorial(chunk: Node2D) -> void:
 	# Tutorial panel — jump instruction before the gap
 	_create_tutorial_panel(
 		chunk,
-		"Pulsa el botón para Saltar",
+		"Pulsa el botón para saltar",
 		"res://assets/rocket/Jump_2.png",
 		Vector2(120, last_platform_y - 165)
 	)
@@ -286,7 +293,7 @@ func _build_code_tutorial(chunk: Node2D) -> void:
 	# Tutorial panel
 	_create_powerup_tutorial_panel(
 		chunk,
-		"SkillUp: Programación te protege de bugs",
+		"Habilidad: Programación te protege de bugs",
 		"res://assets/powerups/powerup_code.png",
 		"res://assets/bug/bug_1.png",
 		Vector2(30.0, last_platform_y - 165)
@@ -303,7 +310,7 @@ func _build_cpu_tutorial(chunk: Node2D) -> void:
 	# Tutorial panel
 	_create_powerup_tutorial_panel(
 		chunk,
-		"SkillUp: Hardware te ayuda a dominar servidores",
+		"Habilidad: Ciberseguridad neutraliza vulnerabilidades",
 		"res://assets/powerups/powerup_cpu.png",
 		"res://assets/server/server_red.png",
 		Vector2(30.0, last_platform_y - 165)
@@ -337,6 +344,7 @@ func _create_powerup_tutorial_panel(chunk: Node2D, text: String, icon1_path: Str
 	row.add_theme_constant_override("separation", 16)
 
 	var label := Label.new()
+	label.add_theme_font_override("font", _mono_font)
 	label.text = text
 	label.add_theme_font_size_override("font_size", 22)
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
@@ -357,6 +365,7 @@ func _make_icon_arrow_icon(icon1_path: String, icon2_path: String) -> HBoxContai
 	hbox.add_child(_make_circle_icon(icon1_path, 44))
 
 	var arrow := Label.new()
+	arrow.add_theme_font_override("font", _mono_font)
 	arrow.text = "→"
 	arrow.add_theme_font_size_override("font_size", 28)
 	arrow.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0, 0.95))
@@ -421,6 +430,7 @@ func _create_tutorial_panel(chunk: Node2D, message: String, image_path: String, 
 
 	# ── 1. Label (left / "atras", the player reads it first) ──
 	var label := Label.new()
+	label.add_theme_font_override("font", _mono_font)
 	label.text = message
 	label.add_theme_font_size_override("font_size", 26)
 	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
@@ -738,6 +748,7 @@ func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 		return
 	# take_damage returns true if the player survived by consuming a charge
 	if body.take_damage("bug"):
+		GameManager.add_bug_eliminated()
 		if spike.has_method("queue_free") and not spike.is_queued_for_deletion():
 			var bug_sprite: Node2D = null
 			for child in spike.get_children():
@@ -762,6 +773,7 @@ func _on_server_body_entered(body: Node2D, server: Area2D) -> void:
 		return
 	# take_damage returns true if the player survived by consuming a charge
 	if body.take_damage("server"):
+		GameManager.add_server_secured()
 		# Disable all stacked servers in this cluster so the player doesn't
 		# get hit twice by the same stack
 		for group in server.get_groups():

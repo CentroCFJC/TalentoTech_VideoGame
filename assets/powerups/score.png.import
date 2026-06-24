@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://0d1t68bbdpyr"
-path="res://.godot/imported/caldas.jpeg-5dafea7a4da1e14f3c1f33aa000d7917.ctex"
+uid="uid://cfdyq80m4ggpd"
+path="res://.godot/imported/score.png-4593f20cb1d6b7bd3bd27f2e00f52f30.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/background/caldas.jpeg"
-dest_files=["res://.godot/imported/caldas.jpeg-5dafea7a4da1e14f3c1f33aa000d7917.ctex"]
+source_file="res://assets/powerups/score.png"
+dest_files=["res://.godot/imported/score.png-4593f20cb1d6b7bd3bd27f2e00f52f30.ctex"]
 
 [params]
 

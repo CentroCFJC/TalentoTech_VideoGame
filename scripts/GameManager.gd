@@ -6,6 +6,8 @@ extends Node
 signal state_changed(new_state: State)
 signal score_changed(score: int)
 signal keys_changed(count: int)
+signal bugs_eliminated_changed(count: int)
+signal servers_secured_changed(count: int)
 
 # Game states
 enum State { TITLE, PLAYING, DEAD, GAME_OVER }
@@ -20,6 +22,10 @@ var death_cause: String = ""
 
 # Key collection progress (max 6)
 var keys_collected: int = 0
+
+# Per-run statistics
+var bugs_eliminated: int = 0
+var servers_secured: int = 0
 
 # High score file path
 const SAVE_PATH: String = "user://highscore.save"
@@ -41,8 +47,12 @@ func start_game() -> void:
 	score = 0
 	death_cause = ""
 	keys_collected = 0
+	bugs_eliminated = 0
+	servers_secured = 0
 	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
+	bugs_eliminated_changed.emit(bugs_eliminated)
+	servers_secured_changed.emit(servers_secured)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)
 
@@ -79,11 +89,29 @@ func restart_game() -> void:
 	score = 0
 	death_cause = ""
 	keys_collected = 0
+	bugs_eliminated = 0
+	servers_secured = 0
 	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
+	bugs_eliminated_changed.emit(bugs_eliminated)
+	servers_secured_changed.emit(servers_secured)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)
 	get_tree().reload_current_scene()
+
+## Increment per-run bug elimination counter (Programación skill)
+func add_bug_eliminated() -> void:
+	if current_state != State.PLAYING:
+		return
+	bugs_eliminated += 1
+	bugs_eliminated_changed.emit(bugs_eliminated)
+
+## Increment per-run server secured counter (Ciberseguridad skill)
+func add_server_secured() -> void:
+	if current_state != State.PLAYING:
+		return
+	servers_secured += 1
+	servers_secured_changed.emit(servers_secured)
 
 ## Save best score to file
 func _save_best_score() -> void:
