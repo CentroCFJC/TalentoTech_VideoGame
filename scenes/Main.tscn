@@ -1,17 +1,14 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1"]
 [ext_resource type="Script" path="res://scripts/HUD.gd" id="2"]
 [ext_resource type="Script" path="res://scripts/PlatformSpawner.gd" id="3"]
-[ext_resource type="Script" path="res://scripts/Hazard.gd" id="4"]
 [ext_resource type="Texture2D" path="res://assets/background/antioquia.jpeg" id="5"]
 [ext_resource type="Script" path="res://scripts/Background.gd" id="6"]
 [ext_resource type="AudioStream" path="res://assets/audio/music/loop.mp3" id="7"]
 [ext_resource type="Script" path="res://scripts/MusicPlayer.gd" id="8"]
 [ext_resource type="Texture2D" path="res://assets/logos/logo.png" id="9"]
-
-[sub_resource type="RectangleShape2D" id="killzone_shape"]
-size = Vector2(200000, 40)
+[ext_resource type="Texture2D" path="res://assets/splash/splash.jpg" id="10"]
 
 [node name="Main" type="Node2D"]
 
@@ -32,15 +29,6 @@ position = Vector2(100, 440)
 
 [node name="PlatformSpawner" type="Node2D" parent="."]
 script = ExtResource("3")
-
-[node name="KillZone" type="Area2D" parent="."]
-position = Vector2(100000, 1000)
-collision_layer = 16
-collision_mask = 1
-script = ExtResource("4")
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="KillZone"]
-shape = SubResource("killzone_shape")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 script = ExtResource("2")
@@ -71,47 +59,22 @@ theme_override_colors/font_color = Color(0.7, 0.5, 0, 1)
 theme_override_font_sizes/font_size = 18
 text = "Best: 0"
 
-[node name="TitlePanel" type="CenterContainer" parent="HUD"]
+[node name="TitlePanel" type="Control" parent="HUD"]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="HUD/TitlePanel"]
-layout_mode = 2
-theme_override_constants/separation = 20
-alignment = 1
-
-[node name="TitleLogo" type="TextureRect" parent="HUD/TitlePanel/VBoxContainer"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 350)
-texture = ExtResource("9")
-stretch_mode = 5
-expand_mode = 2
-size_flags_horizontal = 4
-size_flags_vertical = 3
-
-[node name="TitleLabel" type="Label" parent="HUD/TitlePanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 52
-text = "TalentoTech: SkillUp"
-horizontal_alignment = 1
-
-[node name="BestScoreLabel" type="Label" parent="HUD/TitlePanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
-theme_override_font_sizes/font_size = 24
-text = "Best Score: 0"
-horizontal_alignment = 1
-
-[node name="PromptLabel" type="Label" parent="HUD/TitlePanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.8, 0.85, 1, 1)
-theme_override_font_sizes/font_size = 20
-text = "▶ Presiona ESPACIO para jugar"
-horizontal_alignment = 1
+[node name="SplashTexture" type="TextureRect" parent="HUD/TitlePanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("10")
+stretch_mode = 3
 
 [node name="GameOverPanel" type="CenterContainer" parent="HUD"]
 visible = false

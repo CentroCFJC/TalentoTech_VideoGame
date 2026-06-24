@@ -55,9 +55,6 @@ var camera: Camera2D = null
 var rng := RandomNumberGenerator.new()
 var last_server_spawn_x: float = -2000.0
 
-# Collision shapes (created once, shared)
-var ground_shape: RectangleShape2D
-
 # PowerUp spawning
 var powerup_scene: PackedScene = null
 
@@ -85,7 +82,7 @@ func _on_score_changed(score: int) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
 		return
 	if score >= _next_key_score and _key_chunks_remaining == 0:
-		_key_chunks_remaining = 8
+		_key_chunks_remaining = 4
 		_next_key_score += 1000
 
 func _process(delta: float) -> void:
@@ -206,9 +203,7 @@ func _generate_chunk(chunk_x: float) -> void:
 		_build_flat_ground(chunk)
 		return
 	elif _key_chunks_remaining > 0:
-		if _key_chunks_remaining == 8:
-			last_platform_y = GROUND_Y
-		var spawn_key: bool = _key_chunks_remaining == 5
+		var spawn_key: bool = _key_chunks_remaining == 2
 		_build_key_easy(chunk)
 		_key_chunks_remaining -= 1
 		if spawn_key:

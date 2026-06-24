@@ -5,6 +5,7 @@ extends Node
 # Signals
 signal state_changed(new_state: State)
 signal score_changed(score: int)
+signal keys_changed(count: int)
 
 # Game states
 enum State { TITLE, PLAYING, DEAD, GAME_OVER }
@@ -16,6 +17,9 @@ var best_score: int = 0
 
 # Death cause — set before DEAD state is emitted so HUD can read it
 var death_cause: String = ""
+
+# Key collection progress (max 6)
+var keys_collected: int = 0
 
 # High score file path
 const SAVE_PATH: String = "user://highscore.save"
@@ -36,6 +40,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func start_game() -> void:
 	score = 0
 	death_cause = ""
+	keys_collected = 0
+	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)
@@ -48,13 +54,6 @@ func update_score_from_distance(player_x: float) -> void:
 	if new_score > score:
 		score = new_score
 		score_changed.emit(score)
-
-## Add bonus points directly (powerups, stomps, etc.)
-func add_score(amount: int) -> void:
-	if current_state != State.PLAYING:
-		return
-	score += amount
-	score_changed.emit(score)
 
 ## Called when the player dies — cause is "bug", "fall", or ""
 func on_player_death(cause: String = "") -> void:
@@ -79,6 +78,8 @@ func on_player_death(cause: String = "") -> void:
 func restart_game() -> void:
 	score = 0
 	death_cause = ""
+	keys_collected = 0
+	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)

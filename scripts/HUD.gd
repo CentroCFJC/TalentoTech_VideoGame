@@ -7,10 +7,7 @@ extends CanvasLayer
 @onready var best_label: Label = $MarginContainer/HBoxContainer/BestLabel
 
 # Title screen
-@onready var title_panel: CenterContainer = $TitlePanel
-@onready var title_label: Label = $TitlePanel/VBoxContainer/TitleLabel
-@onready var title_best_label: Label = $TitlePanel/VBoxContainer/BestScoreLabel
-@onready var title_prompt: Label = $TitlePanel/VBoxContainer/PromptLabel
+@onready var title_panel: Control = $TitlePanel
 
 # Game Over screen
 @onready var gameover_panel: CenterContainer = $GameOverPanel
@@ -38,22 +35,32 @@ var _slot_cpu_icon: TextureRect = null
 var _slot_code_status: Label = null
 var _slot_cpu_status: Label = null
 
+# Key progress panel
+const KEY_SLOT_COUNT: int = 6
+const KEY_ICON_PATH: String = "res://assets/powerups/powerup_key.png"
+
+var _key_panel: PanelContainer = null
+var _key_slots: Array[TextureRect] = []
+
 # Video playback
 var _video_panel: PanelContainer = null
 var _video_player: VideoStreamPlayer = null
 var _skip_panel: PanelContainer = null
 var _skip_label: Label = null
 var _skip_tween: Tween = null
+var _can_skip_video: bool = false
 
 func _ready() -> void:
 	GameManager.score_changed.connect(_on_score_changed)
 	GameManager.state_changed.connect(_on_state_changed)
+	GameManager.keys_changed.connect(_on_keys_changed)
 
 	# Hide old top bar — score/best live inside PowerUpPanel now
 	$MarginContainer.hide()
 
 	_setup_powerup_panel()
 	_setup_best_panel()
+	_setup_key_panel()
 	_setup_video_panel()
 	_try_connect_player()
 
@@ -62,8 +69,6 @@ func _ready() -> void:
 	gameover_vbox = $GameOverPanel/VBoxContainer
 	_setup_game_over_card()
 
-	if title_prompt:
-		title_prompt.text = "▶ Presiona El Botón para jugar"
 	if gameover_prompt:
 		gameover_prompt.text = "▶ Presiona El Botón para reiniciar"
 
@@ -88,12 +93,11 @@ func _show_title_screen() -> void:
 	powerup_panel.hide()
 	if _best_panel:
 		_best_panel.hide()
+	if _key_panel:
+		_key_panel.hide()
 	if _video_panel:
 		_video_panel.hide()
 	_skip_panel.hide()
-
-	title_best_label.text = "Best Score: %d" % GameManager.best_score
-	_start_blink(title_prompt)
 
 func _show_playing_hud() -> void:
 	title_panel.visible = false
@@ -103,6 +107,9 @@ func _show_playing_hud() -> void:
 	powerup_panel.show()
 	if _best_panel:
 		_best_panel.show()
+	if _key_panel:
+		_key_panel.show()
+		update_key_panel(GameManager.keys_collected)
 	if _video_panel:
 		_video_panel.hide()
 	_skip_panel.hide()
@@ -120,6 +127,8 @@ func _show_game_over() -> void:
 	powerup_panel.hide()
 	if _best_panel:
 		_best_panel.hide()
+	if _key_panel:
+		_key_panel.hide()
 	_skip_panel.hide()
 
 	gameover_score_label.text = "Score: %d" % GameManager.score
@@ -232,6 +241,8 @@ func _on_video_key_collected() -> void:
 	if not _video_panel or not is_instance_valid(_video_panel):
 		return
 
+	_can_skip_video = false
+
 	var files := DirAccess.get_files_at("res://assets/videos/")
 	var ogv_files: Array[String] = []
 	for f in files:
@@ -245,6 +256,8 @@ func _on_video_key_collected() -> void:
 
 	if _best_panel and is_instance_valid(_best_panel):
 		_best_panel.hide()
+	if _key_panel and is_instance_valid(_key_panel):
+		_key_panel.hide()
 
 	_video_panel.modulate = Color(1, 1, 1, 0)
 	_video_panel.show()
@@ -259,6 +272,7 @@ func _on_video_key_collected() -> void:
 		_skip_tween = create_tween().bind_node(_skip_panel)
 		_skip_tween.tween_interval(5.0)
 		_skip_tween.tween_callback(func():
+			_can_skip_video = true
 			_skip_panel.show()
 			_skip_panel.modulate.a = 1.0
 			_skip_tween = create_tween().bind_node(_skip_panel).set_loops()
@@ -276,11 +290,12 @@ func _on_video_key_collected() -> void:
 	_set_music_video_duck(true)
 
 func _input(event: InputEvent) -> void:
-	if _video_panel and _video_panel.visible and event.is_action_pressed("ui_accept"):
+	if _video_panel and _video_panel.visible and _can_skip_video and event.is_action_pressed("ui_accept"):
 		_close_video()
 		get_viewport().set_input_as_handled()
 
 func _close_video() -> void:
+	_can_skip_video = false
 	get_tree().paused = false
 
 	var music = get_tree().get_first_node_in_group("music")
@@ -305,6 +320,9 @@ func _close_video() -> void:
 
 	if _best_panel and is_instance_valid(_best_panel):
 		_best_panel.show()
+	if _key_panel and is_instance_valid(_key_panel):
+		_key_panel.show()
+		update_key_panel(GameManager.keys_collected)
 
 func _set_music_video_duck(active: bool) -> void:
 	var music = get_tree().get_first_node_in_group("music")
@@ -442,6 +460,66 @@ func _setup_best_panel() -> void:
 	vbox.add_child(_panel_best_label)
 
 	_best_panel.add_child(vbox)
+
+# ── Key Progress Panel — top center ────────────────────────────
+
+func _setup_key_panel() -> void:
+	_key_panel = PanelContainer.new()
+	_key_panel.name = "KeyPanel"
+	_key_panel.hide()
+	add_child(_key_panel)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.08, 0.16, 0.82)
+	style.border_color = Color(0.35, 0.60, 0.95, 0.65)
+	style.set_border_width_all(2)
+	style.corner_radius_top_left     = 8
+	style.corner_radius_top_right    = 8
+	style.corner_radius_bottom_left  = 8
+	style.corner_radius_bottom_right = 8
+	style.content_margin_left   = 10
+	style.content_margin_top    = 6
+	style.content_margin_right  = 10
+	style.content_margin_bottom = 6
+	style.anti_aliasing = true
+	_key_panel.add_theme_stylebox_override("panel", style)
+
+	_key_panel.anchors_preset = Control.PRESET_CENTER_TOP
+	_key_panel.offset_left  = -110
+	_key_panel.offset_top   = 10
+	_key_panel.offset_right = 110
+	_key_panel.offset_bottom = 48
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 6)
+
+	var key_tex: Texture2D = null
+	if ResourceLoader.exists(KEY_ICON_PATH):
+		key_tex = load(KEY_ICON_PATH)
+
+	for i in range(KEY_SLOT_COUNT):
+		var slot := TextureRect.new()
+		slot.custom_minimum_size = Vector2(28, 28)
+		if key_tex:
+			slot.texture = key_tex
+		slot.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		slot.expand_mode  = TextureRect.EXPAND_IGNORE_SIZE
+		slot.modulate = Color(0.15, 0.15, 0.2, 0.55)
+		hbox.add_child(slot)
+		_key_slots.append(slot)
+
+	_key_panel.add_child(hbox)
+
+func update_key_panel(count: int) -> void:
+	count = clampi(count, 0, KEY_SLOT_COUNT)
+	for i in range(KEY_SLOT_COUNT):
+		if i < count:
+			_key_slots[i].modulate = Color.WHITE
+		else:
+			_key_slots[i].modulate = Color(0.15, 0.15, 0.2, 0.55)
+
+func _on_keys_changed(count: int) -> void:
+	update_key_panel(count)
 
 func _build_slot(parent: VBoxContainer, key: String, display_name: String, icon_path: String) -> TextureRect:
 	var row := HBoxContainer.new()

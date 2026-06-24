@@ -295,12 +295,6 @@ func apply_powerup(type: String, _duration: float) -> void:
 			has_cpu_charge = true
 			emit_signal("powerup_changed", "cpu", true)
 		"key":
+			GameManager.keys_collected += 1
+			GameManager.keys_changed.emit(GameManager.keys_collected)
 			emit_signal("video_key_collected")
-
-## Returns true when the code charge is available (used by spawner/bugs)
-func has_code_powerup() -> bool:
-	return has_code_charge
-
-## Returns true when the cpu charge is available (used by spawner/servers)
-func has_cpu_powerup() -> bool:
-	return has_cpu_charge

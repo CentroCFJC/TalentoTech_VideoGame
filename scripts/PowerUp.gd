@@ -3,7 +3,7 @@ extends Area2D
 ## PowerUp — Collectible item that applies a temporary effect to the player.
 ## Modular: add new types by extending the match in _apply_effect().
 
-@export_enum("speed", "jump", "invulnerability", "code", "cpu", "key") var type: String = "speed"
+@export_enum("code", "cpu", "key") var type: String = "code"
 @export var duration: float = 5.0
 
 var is_collected: bool = false
@@ -29,12 +29,6 @@ func _set_appearance_by_type() -> void:
 	if not sprite:
 		return
 	match type:
-		"speed":
-			sprite.modulate = Color(0.2, 0.8, 1.0)  # Cyan / blue
-		"jump":
-			sprite.modulate = Color(0.2, 1.0, 0.4)   # Green
-		"invulnerability":
-			sprite.modulate = Color(1.0, 0.85, 0.0)  # Gold
 		"code":
 			# Load the powerup_code sprite and keep its natural colors
 			var code_tex = load("res://assets/powerups/powerup_code.png")
