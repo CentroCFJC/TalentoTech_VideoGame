@@ -16,6 +16,7 @@ var current_state: State = State.TITLE
 # Score
 var score: int = 0
 var best_score: int = 0
+var is_new_record: bool = false
 
 # Death cause — set before DEAD state is emitted so HUD can read it
 var death_cause: String = ""
@@ -45,6 +46,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Start a new game from title screen
 func start_game() -> void:
 	score = 0
+	is_new_record = false
 	death_cause = ""
 	keys_collected = 0
 	bugs_eliminated = 0
@@ -77,7 +79,8 @@ func on_player_death(cause: String = "") -> void:
 	await get_tree().create_timer(1.0).timeout
 	
 	# Update best score
-	if score > best_score:
+	is_new_record = score > best_score
+	if is_new_record:
 		best_score = score
 		_save_best_score()
 	
@@ -87,6 +90,7 @@ func on_player_death(cause: String = "") -> void:
 ## Restart the game
 func restart_game() -> void:
 	score = 0
+	is_new_record = false
 	death_cause = ""
 	keys_collected = 0
 	bugs_eliminated = 0

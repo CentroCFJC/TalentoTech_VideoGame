@@ -1,7 +1,7 @@
 [gd_scene load_steps=4 format=3 uid="uid://powerup001"]
 
 [ext_resource type="Script" path="res://scripts/PowerUp.gd" id="1"]
-[ext_resource type="Texture2D" path="res://assets/powerup.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/powerups/powerup_code.png" id="2"]
 
 [sub_resource type="CircleShape2D" id="CircleShape2D_powerup"]
 radius = 22.0

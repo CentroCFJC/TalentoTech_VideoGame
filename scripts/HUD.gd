@@ -7,11 +7,30 @@ extends CanvasLayer
 
 # Game Over screen
 @onready var gameover_panel: CenterContainer = $GameOverPanel
-@onready var gameover_label: Label = $GameOverPanel/VBoxContainer/GameOverLabel
-@onready var gameover_score_label: Label = $GameOverPanel/VBoxContainer/ScoreResultLabel
-@onready var gameover_best_label: Label = $GameOverPanel/VBoxContainer/BestResultLabel
-@onready var gameover_record_label: Label = $GameOverPanel/VBoxContainer/NewRecordLabel
-@onready var gameover_prompt: Label = $GameOverPanel/VBoxContainer/RestartPromptLabel
+
+# Game Over panel sections (built dynamically in _setup_game_over_panel)
+var _gameover_card: PanelContainer = null
+var _gameover_main_vbox: VBoxContainer = null
+
+var _gameover_title_label: Label = null
+
+var _gameover_score_caption: Label = null
+var _gameover_score_value: Label = null
+var _gameover_new_record_badge: PanelContainer = null
+var _gameover_new_record_label: Label = null
+var _gameover_best_score_label: Label = null
+
+var _gameover_bugs_value: Label = null
+var _gameover_servers_value: Label = null
+
+var _gameover_death_section: PanelContainer = null
+var _gameover_death_cause: Label = null
+var _gameover_death_avoid: Label = null
+var _gameover_death_icons: HBoxContainer = null
+
+var _gameover_restart_cta: PanelContainer = null
+var _gameover_restart_line1: Label = null
+var _gameover_restart_line2: Label = null
 
 # Top panels (built dynamically)
 var _progress_panel: PanelContainer = null
@@ -45,10 +64,6 @@ var _skillup_cpu_bar: ColorRect = null
 const KEY_SLOT_COUNT: int = 6
 const KEY_ICON_PATH: String = "res://assets/powerups/powerup_key.png"
 var _key_slots: Array[TextureRect] = []
-
-# Game Over — contextual cause block
-var _cause_box: Control = null
-var gameover_vbox: VBoxContainer = null
 
 # Video playback
 var _video_panel: PanelContainer = null
@@ -95,11 +110,7 @@ func _ready() -> void:
 
 	process_mode = PROCESS_MODE_ALWAYS
 
-	gameover_vbox = $GameOverPanel/VBoxContainer
-	_setup_game_over_card()
-
-	if gameover_prompt:
-		gameover_prompt.text = "▶ Presiona El Botón para reiniciar"
+	_setup_game_over_panel()
 
 	_on_state_changed(GameManager.current_state)
 
@@ -174,21 +185,32 @@ func _show_game_over() -> void:
 		_logo_panel.show()
 	_skip_panel.hide()
 
-	gameover_score_label.text = "Puntuación: %d" % GameManager.score
-	gameover_best_label.text = "Récord: %d" % GameManager.best_score
+	# Populate score block
+	if _gameover_score_value:
+		_gameover_score_value.text = "%d" % GameManager.score
+	if _gameover_best_score_label:
+		_gameover_best_score_label.text = "RÉCORD: %d" % GameManager.best_score
+	if _gameover_new_record_badge and _gameover_best_score_label:
+		if GameManager.is_new_record and GameManager.score > 0:
+			_gameover_new_record_badge.visible = true
+			_gameover_best_score_label.visible = false
+		else:
+			_gameover_new_record_badge.visible = false
+			_gameover_best_score_label.visible = true
 
-	if GameManager.score >= GameManager.best_score and GameManager.score > 0:
-		gameover_record_label.text = "¡NUEVO RECORD!"
-		gameover_record_label.visible = true
-	else:
-		gameover_record_label.visible = false
+	# Populate stats cards
+	if _gameover_bugs_value:
+		_gameover_bugs_value.text = "%d" % GameManager.bugs_eliminated
+	if _gameover_servers_value:
+		_gameover_servers_value.text = "%d" % GameManager.servers_secured
 
 	_build_death_cause_ui()
 
 	gameover_panel.modulate.a = 0.0
 	var tween := create_tween()
 	tween.tween_property(gameover_panel, "modulate:a", 1.0, 0.5)
-	_start_blink(gameover_prompt)
+	_start_blink(_gameover_restart_line1)
+	_start_blink(_gameover_restart_line2)
 
 	if _gameover_timer:
 		_gameover_timer.queue_free()
@@ -277,10 +299,6 @@ func _setup_mono_font() -> void:
 	_mono_font.font_names = PackedStringArray(["Courier New", "monospace", "Consolas", "Menlo"])
 	_mono_font.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
 	_mono_font.generate_mipmaps = true
-
-	for label in [gameover_label, gameover_score_label, gameover_best_label, gameover_record_label, gameover_prompt]:
-		if label:
-			label.add_theme_font_override("font", _mono_font)
 
 func _apply_mono(label: Label) -> void:
 	if _mono_font:
@@ -755,126 +773,322 @@ func _set_music_video_duck(active: bool) -> void:
 	if music and music.has_method("set_video_reduction"):
 		music.set_video_reduction(active)
 
-# ── Game Over cause block ─────────────────────────────────────
+# ── Game Over panel — new mockup layout ───────────────────────
+
+const GAME_OVER_ACCENT: Color = Color(0.35, 0.60, 0.95, 0.90)
+const GAME_OVER_BG: Color = Color(0.06, 0.08, 0.14, 0.95)
+const GAME_OVER_SECTION_BG: Color = Color(0.09, 0.12, 0.20, 0.85)
+
+func _create_game_over_card_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = GAME_OVER_BG
+	style.border_color = GAME_OVER_ACCENT
+	style.set_border_width_all(3)
+	style.corner_radius_top_left = 18
+	style.corner_radius_top_right = 18
+	style.corner_radius_bottom_left = 18
+	style.corner_radius_bottom_right = 18
+	style.content_margin_left = 36
+	style.content_margin_top = 28
+	style.content_margin_right = 36
+	style.content_margin_bottom = 28
+	style.anti_aliasing = true
+	return style
+
+func _create_game_over_section_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = GAME_OVER_SECTION_BG
+	style.border_color = Color(0.30, 0.50, 0.80, 0.55)
+	style.set_border_width_all(2)
+	style.corner_radius_top_left = 10
+	style.corner_radius_top_right = 10
+	style.corner_radius_bottom_left = 10
+	style.corner_radius_bottom_right = 10
+	style.content_margin_left = 16
+	style.content_margin_top = 12
+	style.content_margin_right = 16
+	style.content_margin_bottom = 12
+	style.anti_aliasing = true
+	return style
+
+func _create_game_over_badge_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(1.0, 0.78, 0.12, 0.95)
+	style.border_color = Color(1.0, 0.90, 0.35, 1.0)
+	style.set_border_width_all(2)
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left = 12
+	style.content_margin_top = 6
+	style.content_margin_right = 12
+	style.content_margin_bottom = 6
+	style.anti_aliasing = true
+	return style
+
+func _create_game_over_cta_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.35, 0.65, 0.95)
+	style.border_color = Color(0.45, 0.70, 1.0, 0.95)
+	style.set_border_width_all(2)
+	style.corner_radius_top_left = 10
+	style.corner_radius_top_right = 10
+	style.corner_radius_bottom_left = 10
+	style.corner_radius_bottom_right = 10
+	style.content_margin_left = 18
+	style.content_margin_top = 12
+	style.content_margin_right = 18
+	style.content_margin_bottom = 12
+	style.anti_aliasing = true
+	return style
+
+func _setup_game_over_panel() -> void:
+	if not gameover_panel:
+		return
+
+	# Clear any legacy children
+	for child in gameover_panel.get_children():
+		child.queue_free()
+
+	_gameover_card = PanelContainer.new()
+	_gameover_card.name = "GameOverCard"
+	_gameover_card.add_theme_stylebox_override("panel", _create_game_over_card_style())
+	gameover_panel.add_child(_gameover_card)
+
+	var main_vbox := VBoxContainer.new()
+	main_vbox.name = "GameOverMainVBox"
+	main_vbox.add_theme_constant_override("separation", 18)
+	main_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	_gameover_card.add_child(main_vbox)
+	_gameover_main_vbox = main_vbox
+
+	# ── Header ──
+	var header := _create_game_over_section()
+	_gameover_title_label = _create_game_over_label(48, Color(1.0, 0.28, 0.18))
+	_gameover_title_label.text = "FIN DEL JUEGO"
+	header.add_child(_gameover_title_label)
+	main_vbox.add_child(header)
+
+	# ── Score section ──
+	var score_section := _create_game_over_section()
+	var score_vbox := VBoxContainer.new()
+	score_vbox.add_theme_constant_override("separation", 8)
+	score_section.add_child(score_vbox)
+
+	_gameover_score_caption = _create_game_over_label(14, Color(0.55, 0.85, 1.0))
+	_gameover_score_caption.text = "PUNTUACIÓN OBTENIDA"
+	score_vbox.add_child(_gameover_score_caption)
+
+	_gameover_score_value = _create_game_over_label(64, Color.WHITE)
+	_gameover_score_value.text = "0"
+	score_vbox.add_child(_gameover_score_value)
+
+	_gameover_new_record_badge = _create_game_over_badge("¡NUEVO RÉCORD!")
+	score_vbox.add_child(_gameover_new_record_badge)
+
+	_gameover_best_score_label = _create_game_over_label(18, Color(0.85, 0.75, 0.35))
+	_gameover_best_score_label.text = "RÉCORD: 0"
+	score_vbox.add_child(_gameover_best_score_label)
+
+	main_vbox.add_child(score_section)
+
+	# ── Stats section ──
+	var stats_section := HBoxContainer.new()
+	stats_section.add_theme_constant_override("separation", 16)
+	stats_section.alignment = BoxContainer.ALIGNMENT_CENTER
+
+	var bugs_card := _create_stat_card("BUGS ELIMINADOS", ICON_BUG, Color(0.4, 1.0, 0.6))
+	_gameover_bugs_value = bugs_card.value_label
+	stats_section.add_child(bugs_card.card)
+
+	var servers_card := _create_stat_card("SERVIDORES ASEGURADOS", ICON_SERVER, Color(0.55, 0.85, 1.0))
+	_gameover_servers_value = servers_card.value_label
+	stats_section.add_child(servers_card.card)
+
+	main_vbox.add_child(stats_section)
+
+	# ── Death reason section ──
+	_gameover_death_section = _create_game_over_section()
+	var death_vbox := VBoxContainer.new()
+	death_vbox.add_theme_constant_override("separation", 8)
+	_gameover_death_section.add_child(death_vbox)
+
+	var death_title := _create_game_over_label(14, Color(0.55, 0.85, 1.0))
+	death_title.text = "RAZÓN DE LA DERROTA"
+	death_vbox.add_child(death_title)
+
+	_gameover_death_cause = _create_game_over_label(22, Color(1.0, 0.55, 0.25))
+	_gameover_death_cause.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	death_vbox.add_child(_gameover_death_cause)
+
+	_gameover_death_avoid = _create_game_over_label(16, Color(0.82, 0.95, 1.0))
+	_gameover_death_avoid.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	death_vbox.add_child(_gameover_death_avoid)
+
+	_gameover_death_icons = HBoxContainer.new()
+	_gameover_death_icons.alignment = BoxContainer.ALIGNMENT_CENTER
+	_gameover_death_icons.add_theme_constant_override("separation", 18)
+	death_vbox.add_child(_gameover_death_icons)
+
+	main_vbox.add_child(_gameover_death_section)
+
+	# ── Restart CTA ──
+	_gameover_restart_cta = PanelContainer.new()
+	_gameover_restart_cta.name = "RestartCTA"
+	_gameover_restart_cta.add_theme_stylebox_override("panel", _create_game_over_cta_style())
+
+	var cta_vbox := VBoxContainer.new()
+	cta_vbox.add_theme_constant_override("separation", 2)
+	_gameover_restart_cta.add_child(cta_vbox)
+
+	_gameover_restart_line1 = _create_game_over_label(22, Color.WHITE)
+	_gameover_restart_line1.text = "PRESIONA EL BOTÓN"
+	cta_vbox.add_child(_gameover_restart_line1)
+
+	_gameover_restart_line2 = _create_game_over_label(22, Color.WHITE)
+	_gameover_restart_line2.text = "PARA REINICIAR"
+	cta_vbox.add_child(_gameover_restart_line2)
+
+	main_vbox.add_child(_gameover_restart_cta)
+
+func _create_game_over_section() -> PanelContainer:
+	var section := PanelContainer.new()
+	section.add_theme_stylebox_override("panel", _create_game_over_section_style())
+	return section
+
+func _create_game_over_label(font_size: int, font_color: Color) -> Label:
+	var lbl := Label.new()
+	_apply_mono(lbl)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", font_size)
+	lbl.add_theme_color_override("font_color", font_color)
+	return lbl
+
+func _create_game_over_badge(text: String) -> PanelContainer:
+	var badge := PanelContainer.new()
+	badge.name = "NewRecordBadge"
+	badge.add_theme_stylebox_override("panel", _create_game_over_badge_style())
+
+	var lbl := Label.new()
+	_apply_mono(lbl)
+	lbl.text = text
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", Color(0.08, 0.06, 0.02))
+	badge.add_child(lbl)
+	_gameover_new_record_label = lbl
+	return badge
+
+class GameOverStatCard:
+	var card: PanelContainer
+	var value_label: Label
+
+func _create_stat_card(title: String, icon_path: String, icon_color: Color) -> GameOverStatCard:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _create_game_over_section_style())
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 6)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(vbox)
+
+	var header := HBoxContainer.new()
+	header.alignment = BoxContainer.ALIGNMENT_CENTER
+	header.add_theme_constant_override("separation", 8)
+	vbox.add_child(header)
+
+	var icon := _create_icon_texture(icon_path, Vector2(28, 28), icon_color)
+	header.add_child(icon)
+
+	var title_label := Label.new()
+	_apply_mono(title_label)
+	title_label.text = title
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_label.add_theme_font_size_override("font_size", 13)
+	title_label.add_theme_color_override("font_color", Color(0.70, 0.85, 1.0))
+	header.add_child(title_label)
+
+	var value := Label.new()
+	_apply_mono(value)
+	value.text = "0"
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	value.add_theme_font_size_override("font_size", 32)
+	value.add_theme_color_override("font_color", Color.WHITE)
+	vbox.add_child(value)
+
+	var result := GameOverStatCard.new()
+	result.card = card
+	result.value_label = value
+	return result
 
 func _build_death_cause_ui() -> void:
-	if _cause_box and is_instance_valid(_cause_box):
-		_cause_box.queue_free()
-		_cause_box = null
+	if not _gameover_death_cause or not _gameover_death_avoid or not _gameover_death_icons:
+		return
+
+	# Clear previous icons
+	for child in _gameover_death_icons.get_children():
+		child.queue_free()
 
 	var cause := GameManager.death_cause
-	var vbox: VBoxContainer = gameover_vbox
-
-	var headline  := ""
-	var detail    := ""
-	var img_paths : Array[String] = []
+	var headline := ""
+	var detail := ""
+	var img_paths: Array[String] = []
 
 	match cause:
 		"bug":
-			headline  = "¡Bug crítico en el sistema!"
-			detail    = "Consigue la habilidad: Programación para\nprotegerte de los bugs."
+			headline = "Un bug te impactó"
+			detail = "Recoge la habilidad Programación para protegerte."
 			img_paths = ["res://assets/bug/bug_1.png",
 						 "res://assets/powerups/powerup_code.png"]
 		"fall":
-			headline  = "Rocket no vio el abismo..."
-			detail    = "¡Usa el doble salto para\ncruzar los vacíos!"
-			img_paths = []
+			headline = "Caíste al vacío"
+			detail = "Usa el doble salto en los saltos largos."
+			img_paths = ["res://assets/rocket/Fall_1.png"]
 		"server":
-			headline  = "¡Un servidor vulnerable bloqueó tu camino!"
-			detail    = "Consigue la habilidad: Ciberseguridad para\ndetectar y corregir vulnerabilidades."
+			headline = "Un servidor bloqueó tu camino"
+			detail = "Recoge la habilidad Ciberseguridad para atravesarlo."
 			img_paths = ["res://assets/server/server_red.png",
 						 "res://assets/powerups/powerup_cpu.png"]
 		_:
+			_gameover_death_section.visible = false
 			return
 
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 6)
+	_gameover_death_section.visible = true
+	_gameover_death_cause.text = headline
+	_gameover_death_avoid.text = detail
 
-	var sep := HSeparator.new()
-	box.add_child(sep)
-
-	var lbl_head := Label.new()
-	_apply_mono(lbl_head)
-	lbl_head.text = headline
-	lbl_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl_head.add_theme_font_size_override("font_size", 19)
-	lbl_head.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
-	lbl_head.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(lbl_head)
-
-	var lbl_detail := Label.new()
-	_apply_mono(lbl_detail)
-	lbl_detail.text = detail
-	lbl_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl_detail.add_theme_font_size_override("font_size", 16)
-	lbl_detail.add_theme_color_override("font_color", Color(0.82, 0.95, 1.0))
-	lbl_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(lbl_detail)
-
-	if img_paths.size() > 0:
-		var img_row := HBoxContainer.new()
-		img_row.alignment = BoxContainer.ALIGNMENT_CENTER
-		img_row.add_theme_constant_override("separation", 18)
-		for path in img_paths:
-			if ResourceLoader.exists(path):
-				img_row.add_child(_make_circle_icon(path, 52))
-		box.add_child(img_row)
-
-	_cause_box = box
-	vbox.add_child(box)
-	vbox.move_child(box, gameover_prompt.get_index())
+	for path in img_paths:
+		if ResourceLoader.exists(path):
+			_gameover_death_icons.add_child(_make_circle_icon(path, 52))
 
 func _make_circle_icon(img_path: String, size: int) -> Panel:
 	var circle := Panel.new()
 	circle.custom_minimum_size = Vector2(size, size)
 
 	var style := StyleBoxFlat.new()
-	style.bg_color     = Color(0.08, 0.08, 0.14, 0.88)
+	style.bg_color = Color(0.08, 0.08, 0.14, 0.88)
 	style.border_color = Color(0.55, 0.85, 1.0, 0.95)
 	style.set_border_width_all(2)
 	var r: int = int(size / 2.0)
-	style.corner_radius_top_left     = r
-	style.corner_radius_top_right    = r
-	style.corner_radius_bottom_left  = r
+	style.corner_radius_top_left = r
+	style.corner_radius_top_right = r
+	style.corner_radius_bottom_left = r
 	style.corner_radius_bottom_right = r
 	style.anti_aliasing = true
 	circle.add_theme_stylebox_override("panel", style)
 
 	var tex_rect := TextureRect.new()
-	tex_rect.texture       = load(img_path)
-	tex_rect.anchor_left   = 0.0; tex_rect.anchor_top    = 0.0
-	tex_rect.anchor_right  = 1.0; tex_rect.anchor_bottom = 1.0
-	tex_rect.offset_left   =  6;  tex_rect.offset_top    =  6
-	tex_rect.offset_right  = -6;  tex_rect.offset_bottom = -6
-	tex_rect.stretch_mode  = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tex_rect.expand_mode   = TextureRect.EXPAND_IGNORE_SIZE
+	tex_rect.texture = load(img_path)
+	tex_rect.anchor_left = 0.0
+	tex_rect.anchor_top = 0.0
+	tex_rect.anchor_right = 1.0
+	tex_rect.anchor_bottom = 1.0
+	tex_rect.offset_left = 6
+	tex_rect.offset_top = 6
+	tex_rect.offset_right = -6
+	tex_rect.offset_bottom = -6
+	tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	circle.add_child(tex_rect)
 	return circle
-
-func _setup_game_over_card() -> void:
-	if not gameover_panel or not gameover_vbox:
-		return
-
-	gameover_panel.remove_child(gameover_vbox)
-
-	var card := PanelContainer.new()
-	card.name = "GameOverCard"
-
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.10, 0.18, 0.85)
-	style.border_color = Color(0.35, 0.60, 0.95, 0.80)
-	style.set_border_width_all(3)
-	style.corner_radius_top_left     = 16
-	style.corner_radius_top_right    = 16
-	style.corner_radius_bottom_left  = 16
-	style.corner_radius_bottom_right = 16
-	style.anti_aliasing = true
-
-	style.content_margin_left   = 32
-	style.content_margin_top    = 28
-	style.content_margin_right  = 32
-	style.content_margin_bottom = 28
-
-	card.add_theme_stylebox_override("panel", style)
-	card.add_child(gameover_vbox)
-	gameover_panel.add_child(card)

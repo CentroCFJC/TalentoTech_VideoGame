@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="1"]
 [ext_resource type="Script" path="res://scripts/HUD.gd" id="2"]
@@ -7,8 +7,7 @@
 [ext_resource type="Script" path="res://scripts/Background.gd" id="6"]
 [ext_resource type="AudioStream" path="res://assets/audio/music/loop.mp3" id="7"]
 [ext_resource type="Script" path="res://scripts/MusicPlayer.gd" id="8"]
-[ext_resource type="Texture2D" path="res://assets/logos/logo.png" id="9"]
-[ext_resource type="Texture2D" path="res://assets/splash/splash.jpg" id="10"]
+[ext_resource type="Texture2D" path="res://assets/splash/splash.jpg" id="9"]
 
 [node name="Main" type="Node2D"]
 
@@ -47,7 +46,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-texture = ExtResource("10")
+texture = ExtResource("9")
 stretch_mode = 6
 
 [node name="GameOverPanel" type="CenterContainer" parent="HUD"]
@@ -57,55 +56,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-
-[node name="VBoxContainer" type="VBoxContainer" parent="HUD/GameOverPanel"]
-layout_mode = 2
-theme_override_constants/separation = 15
-alignment = 1
-
-[node name="LogoTexture" type="TextureRect" parent="HUD/GameOverPanel/VBoxContainer"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 200)
-texture = ExtResource("9")
-stretch_mode = 5
-expand_mode = 2
-size_flags_horizontal = 4
-
-[node name="GameOverLabel" type="Label" parent="HUD/GameOverPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.2, 0.2, 1)
-theme_override_font_sizes/font_size = 52
-text = "FIN DEL JUEGO"
-horizontal_alignment = 1
-
-[node name="ScoreResultLabel" type="Label" parent="HUD/GameOverPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 28
-text = "Puntuación: 0"
-horizontal_alignment = 1
-
-[node name="BestResultLabel" type="Label" parent="HUD/GameOverPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
-theme_override_font_sizes/font_size = 24
-text = "Récord: 0"
-horizontal_alignment = 1
-
-[node name="NewRecordLabel" type="Label" parent="HUD/GameOverPanel/VBoxContainer"]
-visible = false
-layout_mode = 2
-theme_override_colors/font_color = Color(1, 0.9, 0.1, 1)
-theme_override_font_sizes/font_size = 30
-text = "¡NUEVO RECORD!"
-horizontal_alignment = 1
-
-[node name="RestartPromptLabel" type="Label" parent="HUD/GameOverPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.8, 0.85, 1, 1)
-theme_override_font_sizes/font_size = 20
-text = "▶ Presiona ESPACIO para reiniciar"
-horizontal_alignment = 1
 
 [node name="PowerUpPanel" type="PanelContainer" parent="HUD"]
 modulate = Color(1, 1, 1, 0)
