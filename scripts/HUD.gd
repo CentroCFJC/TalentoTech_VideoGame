@@ -914,10 +914,6 @@ func _setup_game_over_panel() -> void:
 	death_vbox.add_theme_constant_override("separation", 8)
 	_gameover_death_section.add_child(death_vbox)
 
-	var death_title := _create_game_over_label(14, Color(0.55, 0.85, 1.0))
-	death_title.text = "RAZÓN DE LA DERROTA"
-	death_vbox.add_child(death_title)
-
 	_gameover_death_cause = _create_game_over_label(22, Color(1.0, 0.55, 0.25))
 	_gameover_death_cause.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	death_vbox.add_child(_gameover_death_cause)
@@ -1037,17 +1033,17 @@ func _build_death_cause_ui() -> void:
 
 	match cause:
 		"bug":
-			headline = "Un bug te impactó"
-			detail = "Recoge la habilidad Programación para protegerte."
+			headline = "¡Un bug te detuvo!"
+			detail = "Adquiere la habilidad Programación para eliminar bugs sin recibir daño."
 			img_paths = ["res://assets/bug/bug_1.png",
 						 "res://assets/powerups/powerup_code.png"]
 		"fall":
-			headline = "Caíste al vacío"
-			detail = "Usa el doble salto en los saltos largos."
+			headline = "¡Caíste al vacío!"
+			detail = "Usa el doble salto para superar los vacíos más largos."
 			img_paths = ["res://assets/rocket/Fall_1.png"]
 		"server":
-			headline = "Un servidor bloqueó tu camino"
-			detail = "Recoge la habilidad Ciberseguridad para atravesarlo."
+			headline = "¡Un servidor vulnerable bloqueó tu camino!"
+			detail = "Adquiere la habilidad Ciberseguridad para detectar y asegurar servidores vulnerables."
 			img_paths = ["res://assets/server/server_red.png",
 						 "res://assets/powerups/powerup_cpu.png"]
 		_:
