@@ -91,14 +91,49 @@ An infinite runner platformer where the player automatically runs to the right, 
 - **Obstacles**:  Bugs and Servers 
 - **Server Cooldown**: Minimum 1000px between server obstacle spawns.
 
+## 🎬 Video Playback on Raspberry Pi
+
+The game plays full-screen reward videos via `VideoStreamPlayer` (`scripts/HUD.gd`).
+Godot only supports Ogg Theora (`.ogv`) in core, and it decodes **entirely on the CPU**.
+On Raspberry Pi 5 / ARM there are no ARM SIMD optimizations for Theora in Godot,
+so high-resolution videos cause black macroblocks and a severe FPS drop.
+
+### Current video assets
+Videos are stored in `assets/videos/` and are approximately **1920x1080 @ 30fps**
+(43–81 MB each). This is too heavy for software Theora decoding on ARM.
+
+### Implemented mitigations
+- `HUD.gd` detects Linux/ARM at runtime (or via `INFINITE_RUNNER_RPI=1`) and
+  switches to `*_rpi.ogv` versions when available.
+- Buffering is increased to `1200 ms` in low-end mode to give the decoder more headroom.
+- Use `tools/build_rpi_videos.py` to generate downscaled copies (default 720p @ 24 fps).
+
+### How to build RPI-optimized videos
+1. Install FFmpeg (on Windows use the daily 32-bit build; 64-bit builds have known
+   Theora muxer bugs according to Godot docs).
+2. Run from the project root:
+   ```bash
+   python tools/build_rpi_videos.py --height 720 --fps 24 --quality 5
+   # For very weak boards use 480p:
+   python tools/build_rpi_videos.py --height 480 --fps 24 --quality 4
+   ```
+3. Re-export the project so the new `*_rpi.ogv` files are included in the PCK.
+
+### Alternative workarounds
+- Convert the shortest/least important videos to an `AnimatedSprite` image sequence
+  to bypass Theora decoding entirely.
+- Reduce the `VideoStreamPlayer` resolution in code or skip video playback on
+  detected low-end hardware.
+
 ## 📂 Key Files
 - `scripts/Player.gd`: Main player logic, movement, jumping, power-up state, and animations.
 - `scripts/PlatformSpawner.gd`: World generation, obstacle placement, and power-up spawning.
 - `scripts/GameManager.gd`: (Autoload) Game state, score, death cause, and high-score persistence.
-- `scripts/HUD.gd`: UI for score, title screen, game over (contextual), and power-up notifications.
+- `scripts/HUD.gd`: UI for score, title screen, game over (contextual), power-up notifications, and video playback.
 - `scripts/PowerUp.gd`: Collectible logic, bob animation, and effect application.
 - `scripts/Enemy.gd`: Patrol and chase behavior.
 - `scripts/Hazard.gd`: Generic damage area (kill zones).
+- `tools/build_rpi_videos.py`: Script to generate downscaled Theora videos for Raspberry Pi / ARM.
 - `scenes/Player.tscn`: Player scene definition.
 - `scenes/PowerUp.tscn`: Power-up scene definition.
 - `project.godot`: Project settings.
