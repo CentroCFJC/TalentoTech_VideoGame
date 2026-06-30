@@ -72,6 +72,18 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			set_physics_process(false)
 			visible = false
 
+# ── DEBUG: Simula la obtención de una key con la tecla V ─────
+# Eliminar este bloque antes de la versión final.
+func _unhandled_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.keycode == KEY_V and event.pressed and not event.echo):
+		return
+	if GameManager.current_state != GameManager.State.PLAYING:
+		return
+	if GameManager.keys_collected >= 6:
+		return
+	apply_powerup("key", 0.0)
+# ── END DEBUG ──
+
 func _process(delta: float) -> void:
 	_update_animation()
 	_update_animation_scale_and_position()

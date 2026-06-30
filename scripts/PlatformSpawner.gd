@@ -39,8 +39,10 @@ enum Pattern {
 	KEY_EASY
 }
 
-# Key pattern — easy section every 1000 points
-var _next_key_score: int = 1000
+# Key pattern — easy section, distributed across the session
+const MAX_KEYS_PER_SESSION: int = 6
+const MIN_KEY_SCORE_SPACING: int = 1800
+var _next_key_score: int = 600
 var _key_chunks_remaining: int = 0
 
 # Server settings
@@ -79,18 +81,20 @@ func _ready() -> void:
 func _on_state_changed(new_state: GameManager.State) -> void:
 	match new_state:
 		GameManager.State.PLAYING:
-			_next_key_score = 1000
+			_next_key_score = 600
 			_key_chunks_remaining = 0
 		GameManager.State.TITLE:
-			_next_key_score = 1000
+			_next_key_score = 600
 			_key_chunks_remaining = 0
 
 func _on_score_changed(score: int) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
 		return
 	if score >= _next_key_score and _key_chunks_remaining == 0:
+		if GameManager.keys_collected >= MAX_KEYS_PER_SESSION:
+			return
 		_key_chunks_remaining = 4
-		_next_key_score += 1000
+		_next_key_score = score + MIN_KEY_SCORE_SPACING
 
 func _process(delta: float) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:

@@ -52,9 +52,12 @@ var _skillup_cpu_bar: ColorRect = null
 const KEY_SLOT_COUNT: int = 6
 const KEY_ICON_PATH: String = "res://assets/powerups/powerup_key.png"
 var _key_slots: Array[TextureRect] = []
+var _video_paths: Array[String] = []
+var _watched_videos: Array[String] = []
 
 # Video playback
 const VIDEO_FOLDER: String = "res://assets/videos/"
+const THUMBNAIL_FOLDER: String = "res://assets/miniaturas/"
 const RPI_VIDEO_SUFFIX: String = "_rpi"
 const RPI_BUFFERING_MSEC: int = 1200
 const DEFAULT_BUFFERING_MSEC: int = 500
@@ -185,6 +188,8 @@ func _show_playing_hud() -> void:
 	if _is_pip_mode or (_video_panel and _video_panel.visible):
 		_close_video()
 
+	_watched_videos.clear()
+
 	title_panel.visible = false
 	gameover_panel.visible = false
 	_kill_gameover_timer()
@@ -193,7 +198,7 @@ func _show_playing_hud() -> void:
 		_progress_panel.show()
 	if _key_panel:
 		_key_panel.show()
-		update_key_panel(GameManager.keys_collected)
+		update_key_panel()
 	if _skillup_panel:
 		_skillup_panel.show()
 	if _logo_panel:
@@ -447,31 +452,46 @@ func _setup_key_panel() -> void:
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	_key_panel.add_child(hbox)
 
-	var key_tex: Texture2D = null
-	if ResourceLoader.exists(KEY_ICON_PATH):
-		key_tex = load(KEY_ICON_PATH)
+	var ogv_files := _collect_video_paths()
+	var thumb_map: Dictionary = {}
+	var thumb_files := DirAccess.get_files_at(THUMBNAIL_FOLDER)
+	if thumb_files:
+		for f in thumb_files:
+			if f.ends_with(".png"):
+				thumb_map[f.get_basename()] = THUMBNAIL_FOLDER + f
 
-	for i in range(KEY_SLOT_COUNT):
+	for i in range(mini(len(ogv_files), KEY_SLOT_COUNT)):
+		var video_path := ogv_files[i]
+		var basename := _get_video_basename(video_path)
+
 		var slot := TextureRect.new()
 		slot.custom_minimum_size = Vector2(28, 28)
-		if key_tex:
-			slot.texture = key_tex
 		slot.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		slot.expand_mode  = TextureRect.EXPAND_IGNORE_SIZE
 		slot.modulate = Color(0.15, 0.15, 0.2, 0.55)
+
+		var thumbnail_path: String = thumb_map.get(basename, "")
+		if not thumbnail_path.is_empty() and ResourceLoader.exists(thumbnail_path):
+			slot.texture = load(thumbnail_path)
+
 		hbox.add_child(slot)
 		_key_slots.append(slot)
 
-func update_key_panel(count: int) -> void:
-	count = clampi(count, 0, KEY_SLOT_COUNT)
-	for i in range(KEY_SLOT_COUNT):
-		if i < count:
+func _get_video_basename(video_path: String) -> String:
+	var basename := video_path.get_file().get_basename()
+	if basename.ends_with(RPI_VIDEO_SUFFIX):
+		basename = basename.trim_suffix(RPI_VIDEO_SUFFIX)
+	return basename
+
+func update_key_panel() -> void:
+	for i in range(_key_slots.size()):
+		if i < _video_paths.size() and _video_paths[i] in _watched_videos:
 			_key_slots[i].modulate = Color.WHITE
 		else:
 			_key_slots[i].modulate = Color(0.15, 0.15, 0.2, 0.55)
 
-func _on_keys_changed(count: int) -> void:
-	update_key_panel(count)
+func _on_keys_changed(_count: int) -> void:
+	update_key_panel()
 
 # ── SkillUp panel — top-right ─────────────────────────────────
 
@@ -687,6 +707,7 @@ func _setup_video_panel() -> void:
 	# En Raspberry Pi / ARM aumentamos el buffer para dar margen al
 	# decodificador software de Theora y reducir macrobloques negros.
 	_video_player.buffering_msec = RPI_BUFFERING_MSEC if _is_low_end_video_mode else DEFAULT_BUFFERING_MSEC
+	_video_player.volume_db = 0.0
 	_video_panel.add_child(_video_player)
 
 	_setup_minimize_label()
@@ -728,6 +749,9 @@ func _setup_minimize_label() -> void:
 	_minimize_panel.add_child(_minimize_label)
 
 func _collect_video_paths() -> Array[String]:
+	if not _video_paths.is_empty():
+		return _video_paths
+
 	var files := DirAccess.get_files_at(VIDEO_FOLDER)
 	var result: Array[String] = []
 
@@ -737,11 +761,15 @@ func _collect_video_paths() -> Array[String]:
 			if f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
 				result.append(VIDEO_FOLDER + f)
 		if not result.is_empty():
+			result.sort()
+			_video_paths = result
 			return result
 
 	for f in files:
 		if f.ends_with(".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
 			result.append(VIDEO_FOLDER + f)
+	result.sort()
+	_video_paths = result
 	return result
 
 func _on_video_key_collected() -> void:
@@ -767,7 +795,22 @@ func _on_video_key_collected() -> void:
 	if ogv_files.is_empty():
 		return
 
-	_video_player.stream = load(ogv_files.pick_random())
+	var unwatched: Array[String] = []
+	for f in ogv_files:
+		if f not in _watched_videos:
+			unwatched.append(f)
+
+	if unwatched.is_empty() and not ogv_files.is_empty():
+		_watched_videos.clear()
+		unwatched = ogv_files.duplicate()
+
+	if unwatched.is_empty():
+		return
+
+	var chosen: String = unwatched.pick_random()
+	_video_player.stream = load(chosen)
+	_watched_videos.append(chosen)
+	update_key_panel()
 
 	if _logo_panel and is_instance_valid(_logo_panel):
 		_logo_panel.hide()
@@ -842,7 +885,7 @@ func _enter_pip_mode() -> void:
 
 	if _key_panel and is_instance_valid(_key_panel):
 		_key_panel.show()
-		update_key_panel(GameManager.keys_collected)
+		update_key_panel()
 
 func _close_video() -> void:
 	_can_minimize_video = false
@@ -874,7 +917,7 @@ func _close_video() -> void:
 		_logo_panel.show()
 	if _key_panel and is_instance_valid(_key_panel):
 		_key_panel.show()
-		update_key_panel(GameManager.keys_collected)
+		update_key_panel()
 
 func _set_music_video_duck(active: bool) -> void:
 	var music = get_tree().get_first_node_in_group("music")
