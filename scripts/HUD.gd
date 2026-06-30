@@ -60,11 +60,15 @@ const RPI_BUFFERING_MSEC: int = 1200
 const DEFAULT_BUFFERING_MSEC: int = 500
 var _video_panel: PanelContainer = null
 var _video_player: VideoStreamPlayer = null
-var _skip_panel: PanelContainer = null
-var _skip_label: Label = null
-var _skip_tween: Tween = null
-var _can_skip_video: bool = false
+var _minimize_panel: PanelContainer = null
+var _minimize_label: Label = null
+var _minimize_tween: Tween = null
+var _can_minimize_video: bool = false
 var _is_low_end_video_mode: bool = false
+var _is_pip_mode: bool = false
+
+const PIP_SIZE: Vector2 = Vector2(320, 180)
+const PIP_MARGIN: Vector2 = Vector2(8, 8)
 
 # Asset paths for HUD icons
 const ICON_SCORE: String = "res://assets/powerups/score.png"
@@ -155,6 +159,9 @@ func _connect_player_signal() -> void:
 # ── Panel visibility per game state ───────────────────────────
 
 func _show_title_screen() -> void:
+	if _is_pip_mode or (_video_panel and _video_panel.visible):
+		_close_video()
+
 	title_panel.visible = true
 	gameover_panel.visible = false
 	if _progress_panel:
@@ -167,7 +174,7 @@ func _show_title_screen() -> void:
 		_logo_panel.hide()
 	if _video_panel:
 		_video_panel.hide()
-	_skip_panel.hide()
+	_minimize_panel.hide()
 
 	if _title_prompt:
 		_title_prompt.show()
@@ -175,6 +182,9 @@ func _show_title_screen() -> void:
 	_kill_gameover_timer()
 
 func _show_playing_hud() -> void:
+	if _is_pip_mode or (_video_panel and _video_panel.visible):
+		_close_video()
+
 	title_panel.visible = false
 	gameover_panel.visible = false
 	_kill_gameover_timer()
@@ -190,7 +200,7 @@ func _show_playing_hud() -> void:
 		_logo_panel.show()
 	if _video_panel:
 		_video_panel.hide()
-	_skip_panel.hide()
+	_minimize_panel.hide()
 
 	_update_score(GameManager.score)
 	if _progress_best_value:
@@ -209,8 +219,9 @@ func _show_game_over() -> void:
 	if _skillup_panel:
 		_skillup_panel.hide()
 	if _logo_panel:
-		_logo_panel.show()
-	_skip_panel.hide()
+		if not _is_pip_mode:
+			_logo_panel.show()
+	_minimize_panel.hide()
 
 	# Populate dynamic labels
 	if _gameover_score_value:
@@ -678,26 +689,26 @@ func _setup_video_panel() -> void:
 	_video_player.buffering_msec = RPI_BUFFERING_MSEC if _is_low_end_video_mode else DEFAULT_BUFFERING_MSEC
 	_video_panel.add_child(_video_player)
 
-	_setup_skip_label()
+	_setup_minimize_label()
 
-func _setup_skip_label() -> void:
-	_skip_panel = PanelContainer.new()
-	_skip_panel.name = "SkipPanel"
+func _setup_minimize_label() -> void:
+	_minimize_panel = PanelContainer.new()
+	_minimize_panel.name = "MinimizePanel"
 
-	_skip_panel.anchor_top = 1.0
-	_skip_panel.anchor_bottom = 1.0
-	_skip_panel.anchor_left = 0.0
-	_skip_panel.anchor_right = 1.0
+	_minimize_panel.anchor_top = 1.0
+	_minimize_panel.anchor_bottom = 1.0
+	_minimize_panel.anchor_left = 0.0
+	_minimize_panel.anchor_right = 1.0
 
-	_skip_panel.offset_left = 60
-	_skip_panel.offset_right = -60
-	_skip_panel.offset_top = -55
-	_skip_panel.offset_bottom = -5
+	_minimize_panel.offset_left = 60
+	_minimize_panel.offset_right = -60
+	_minimize_panel.offset_top = -55
+	_minimize_panel.offset_bottom = -5
 
-	_skip_panel.z_index = 100
-	_skip_panel.process_mode = Node.PROCESS_MODE_ALWAYS
-	_skip_panel.hide()
-	add_child(_skip_panel)
+	_minimize_panel.z_index = 100
+	_minimize_panel.process_mode = Node.PROCESS_MODE_ALWAYS
+	_minimize_panel.hide()
+	add_child(_minimize_panel)
 
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = Color(0.0, 0.0, 0.0, 0.0)
@@ -706,15 +717,15 @@ func _setup_skip_label() -> void:
 	panel_style.content_margin_right = 24
 	panel_style.content_margin_top = 10
 	panel_style.content_margin_bottom = 10
-	_skip_panel.add_theme_stylebox_override("panel", panel_style)
+	_minimize_panel.add_theme_stylebox_override("panel", panel_style)
 
-	_skip_label = Label.new()
-	_apply_mono(_skip_label)
-	_skip_label.text = "Presiona el botón para omitir"
-	_skip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_skip_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
-	_skip_label.add_theme_font_size_override("font_size", 22)
-	_skip_panel.add_child(_skip_label)
+	_minimize_label = Label.new()
+	_apply_mono(_minimize_label)
+	_minimize_label.text = "Presione el botón para minimizar"
+	_minimize_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_minimize_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+	_minimize_label.add_theme_font_size_override("font_size", 22)
+	_minimize_panel.add_child(_minimize_label)
 
 func _collect_video_paths() -> Array[String]:
 	var files := DirAccess.get_files_at(VIDEO_FOLDER)
@@ -737,7 +748,20 @@ func _on_video_key_collected() -> void:
 	if not _video_panel or not is_instance_valid(_video_panel):
 		return
 
-	_can_skip_video = false
+	_can_minimize_video = false
+	_is_pip_mode = false
+
+	_video_panel.anchors_preset = Control.PRESET_FULL_RECT
+	_video_panel.offset_left = 60
+	_video_panel.offset_top = 60
+	_video_panel.offset_right = -60
+	_video_panel.offset_bottom = -60
+	_video_panel.z_index = 0
+
+	var full_style := StyleBoxFlat.new()
+	full_style.bg_color = Color(0.0, 0.0, 0.0, 1.0)
+	full_style.set_border_width_all(0)
+	_video_panel.add_theme_stylebox_override("panel", full_style)
 
 	var ogv_files := _collect_video_paths()
 	if ogv_files.is_empty():
@@ -756,20 +780,16 @@ func _on_video_key_collected() -> void:
 	fade_tween.tween_property(_video_panel, "modulate", Color.WHITE, 0.3)
 
 	if _video_player.stream:
-		_skip_panel.hide()
-		if _skip_tween:
-			_skip_tween.kill()
+		_minimize_panel.hide()
+		if _minimize_tween:
+			_minimize_tween.kill()
 
-		_skip_tween = create_tween().bind_node(_skip_panel)
-		_skip_tween.tween_interval(5.0)
-		_skip_tween.tween_callback(func():
-			_can_skip_video = true
-			_skip_panel.show()
-			_skip_panel.modulate.a = 1.0
-			_skip_tween = create_tween().bind_node(_skip_panel).set_loops()
-			_skip_tween.tween_property(_skip_panel, "modulate:a", 0.3, 0.6).set_trans(Tween.TRANS_SINE)
-			_skip_tween.tween_property(_skip_panel, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
-		)
+		_can_minimize_video = true
+		_minimize_panel.show()
+		_minimize_panel.modulate.a = 1.0
+		_minimize_tween = create_tween().bind_node(_minimize_panel).set_loops()
+		_minimize_tween.tween_property(_minimize_panel, "modulate:a", 0.3, 0.6).set_trans(Tween.TRANS_SINE)
+		_minimize_tween.tween_property(_minimize_panel, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
 
 		_video_player.play()
 
@@ -781,12 +801,52 @@ func _on_video_key_collected() -> void:
 	_set_music_video_duck(true)
 
 func _input(event: InputEvent) -> void:
-	if _video_panel and _video_panel.visible and _can_skip_video and event.is_action_pressed("ui_accept"):
-		_close_video()
+	if _video_panel and _video_panel.visible and not _is_pip_mode and _can_minimize_video and event.is_action_pressed("ui_accept"):
+		_enter_pip_mode()
 		get_viewport().set_input_as_handled()
 
+func _enter_pip_mode() -> void:
+	_can_minimize_video = false
+	_is_pip_mode = true
+
+	if _minimize_tween:
+		_minimize_tween.kill()
+		_minimize_tween = null
+	_minimize_panel.hide()
+
+	var pip_style := StyleBoxFlat.new()
+	pip_style.bg_color = Color(0.0, 0.0, 0.0, 1.0)
+	pip_style.set_border_width_all(2)
+	pip_style.border_color = Color(1.0, 1.0, 1.0, 0.8)
+	pip_style.corner_radius_top_left = 4
+	pip_style.corner_radius_top_right = 4
+	pip_style.corner_radius_bottom_left = 4
+	pip_style.corner_radius_bottom_right = 4
+	_video_panel.add_theme_stylebox_override("panel", pip_style)
+
+	var viewport_size := get_viewport().get_visible_rect().size
+	var pip_x := PIP_MARGIN.x
+	var pip_y := viewport_size.y - PIP_SIZE.y - PIP_MARGIN.y
+
+	_video_panel.z_index = 100
+
+	_video_player.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var pip_tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	pip_tween.tween_property(_video_panel, "offset_left", pip_x, 0.3)
+	pip_tween.tween_property(_video_panel, "offset_top", pip_y, 0.3)
+	pip_tween.tween_property(_video_panel, "offset_right", pip_x + PIP_SIZE.x - viewport_size.x, 0.3)
+	pip_tween.tween_property(_video_panel, "offset_bottom", -PIP_MARGIN.y, 0.3)
+
+	get_tree().paused = false
+
+	if _key_panel and is_instance_valid(_key_panel):
+		_key_panel.show()
+		update_key_panel(GameManager.keys_collected)
+
 func _close_video() -> void:
-	_can_skip_video = false
+	_can_minimize_video = false
+	_is_pip_mode = false
 	get_tree().paused = false
 
 	var music = get_tree().get_first_node_in_group("music")
@@ -796,6 +856,7 @@ func _close_video() -> void:
 		_set_music_video_duck(false)
 
 	if _video_player:
+		_video_player.stop()
 		_video_player.stream = null
 		if _video_player.finished.is_connected(_close_video):
 			_video_player.finished.disconnect(_close_video)
@@ -804,10 +865,10 @@ func _close_video() -> void:
 		_video_panel.modulate = Color.WHITE
 		_video_panel.hide()
 
-	if _skip_tween:
-		_skip_tween.kill()
-		_skip_tween = null
-	_skip_panel.hide()
+	if _minimize_tween:
+		_minimize_tween.kill()
+		_minimize_tween = null
+	_minimize_panel.hide()
 
 	if _logo_panel and is_instance_valid(_logo_panel):
 		_logo_panel.show()
