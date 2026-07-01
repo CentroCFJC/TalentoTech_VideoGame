@@ -90,6 +90,21 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			_key_chunks_remaining = 0
 			_queue_cpu_tutorial = false
 			_cyber_enemies_unlocked = false
+			# Reseteo completo del spawner (no se recarga la escena)
+			next_chunk_x = 0.0
+			last_platform_y = GROUND_Y
+			last_server_spawn_x = -2000.0
+			camera = null
+			# Liberar todos los chunks existentes y empezar limpio
+			# Los bugs/servers son hijos de los chunks, asi que se liberan solos.
+			for chunk in active_chunks:
+				if is_instance_valid(chunk):
+					chunk.queue_free()
+			active_chunks.clear()
+			# Los PowerUp no son hijos de chunks; limpiarlos por grupo runtime
+			for n in get_tree().get_nodes_in_group("__powerups_runtime__"):
+				if is_instance_valid(n):
+					n.queue_free()
 		GameManager.State.TITLE:
 			_next_key_score = 600
 			_key_chunks_remaining = 0
@@ -784,6 +799,7 @@ func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 	# take_damage returns true if the player survived by consuming a charge
 	if body.take_damage("bug"):
 		GameManager.add_bug_eliminated()
+		SFXManager.play_random("coin_")
 		if spike.has_method("queue_free") and not spike.is_queued_for_deletion():
 			var bug_sprite: Node2D = null
 			for child in spike.get_children():
@@ -809,6 +825,7 @@ func _on_server_body_entered(body: Node2D, server: Area2D) -> void:
 	# take_damage returns true if the player survived by consuming a charge
 	if body.take_damage("server"):
 		GameManager.add_server_secured()
+		SFXManager.play("sfxs 80s sound effect")
 		# Disable all stacked servers in this cluster so the player doesn't
 		# get hit twice by the same stack
 		for group in server.get_groups():

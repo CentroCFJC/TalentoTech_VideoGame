@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.7", "Mobile")
 [autoload]
 
 GameManager="*res://scripts/GameManager.gd"
+SFXManager="*res://scripts/SFXManager.gd"
 
 [display]
 

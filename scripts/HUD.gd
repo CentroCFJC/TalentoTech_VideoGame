@@ -866,6 +866,7 @@ func _input(event: InputEvent) -> void:
 func _enter_pip_mode() -> void:
 	_can_minimize_video = false
 	_is_pip_mode = true
+	SFXManager.play("game-collect-item-short-550419")
 
 	if _minimize_tween:
 		_minimize_tween.kill()

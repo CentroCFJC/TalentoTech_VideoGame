@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cdq1ijfkkbiqx"
+path="res://.godot/imported/SFXs 80s sound effect.MP3-b8cde4f85eb98293490fe8a697c4a7b5.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/fx/SFXs 80s sound effect.MP3"
+dest_files=["res://.godot/imported/SFXs 80s sound effect.MP3-b8cde4f85eb98293490fe8a697c4a7b5.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -33,6 +33,10 @@ var servers_secured: int = 0
 
 # High score file path
 const SAVE_PATH: String = "user://highscore.save"
+# Delay entre el SFX de inicio y la transicion a PLAYING (segundos)
+const START_SFX_DELAY: float = 0.6
+# Guard para evitar re-entrada en start_game/restart_game durante el delay
+var _is_transitioning: bool = false
 
 func _ready() -> void:
 	current_state = State.TITLE
@@ -42,14 +46,21 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("jump"):
 		match current_state:
 			State.TITLE:
-				start_game()
-				get_viewport().set_input_as_handled()
+				if not _is_transitioning:
+					start_game()
+					get_viewport().set_input_as_handled()
 			State.GAME_OVER:
-				restart_game()
-				get_viewport().set_input_as_handled()
+				if not _is_transitioning:
+					restart_game()
+					get_viewport().set_input_as_handled()
 
 ## Start a new game from title screen
 func start_game() -> void:
+	_is_transitioning = true
+	# Asegurar que el HUD siga mostrando el titulo durante el delay
+	current_state = State.TITLE
+	SFXManager.play("lolo_s-start-474092")
+	await get_tree().create_timer(START_SFX_DELAY).timeout
 	bg_series = bg_series % 3 + 1
 	score = 0
 	is_new_record = false
@@ -63,6 +74,7 @@ func start_game() -> void:
 	servers_secured_changed.emit(servers_secured)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)
+	_is_transitioning = false
 
 ## Called every frame by player to update score based on distance
 func update_score_from_distance(player_x: float) -> void:
@@ -106,6 +118,11 @@ func on_player_death(cause: String = "") -> void:
 
 ## Restart the game
 func restart_game() -> void:
+	_is_transitioning = true
+	# Mantener el estado GAME_OVER durante el delay para que el HUD siga
+	# mostrando el panel de game over sin ningun tipo de transicion.
+	SFXManager.play("lolo_s-start-474092")
+	await get_tree().create_timer(START_SFX_DELAY).timeout
 	bg_series = bg_series % 3 + 1
 	score = 0
 	is_new_record = false
@@ -118,12 +135,8 @@ func restart_game() -> void:
 	bugs_eliminated_changed.emit(bugs_eliminated)
 	servers_secured_changed.emit(servers_secured)
 	current_state = State.PLAYING
-	get_tree().reload_current_scene()
-	# No emitimos state_changed aqui: reload_current_scene() es diferido (al
-	# final del frame), asi que el HUD viejo (aun vivo) la recibiria e intentaria
-	# buscar el player en la escena que se esta recargando, causando un error.
-	# El nuevo HUD y MusicPlayer leen current_state en sus _ready() y se
-	# inicializan correctamente con State.PLAYING.
+	state_changed.emit(current_state)
+	_is_transitioning = false
 
 ## Increment per-run bug elimination counter (Programación skill)
 func add_bug_eliminated() -> void:

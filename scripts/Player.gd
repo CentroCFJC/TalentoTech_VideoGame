@@ -66,14 +66,31 @@ func _ready() -> void:
 func _on_state_changed(new_state: GameManager.State) -> void:
 	match new_state:
 		GameManager.State.PLAYING:
+			# Reseteo completo del estado del player (no se recarga la escena)
 			is_dead = false
 			is_falling_out = false
-			visible = true
-			collision_layer = 1
-			collision_mask = 2 | 16  # Environment + Hazards
+			fall_timeout = 0.0
+			jumps_remaining = MAX_JUMPS
+			current_speed = AUTO_RUN_SPEED
 			jump_buffer_timer = 0.0
 			coyote_timer = 0.0
 			_jump_lockout_timer = 0.15
+			velocity = Vector2.ZERO
+			# Restaurar posicion inicial y distancia de referencia
+			global_position = Vector2(100, 440)
+			start_x = global_position.x
+			# Resetear colisiones
+			collision_layer = 1
+			collision_mask = 2 | 16  # Environment + Hazards
+			# Reparentar la camara de vuelta al Player si fue desprendida por la caida
+			var cam: Camera2D = get_node_or_null("Camera2D")
+			if not cam:
+				cam = get_viewport().get_camera_2d()
+				if cam and cam.get_parent() != self:
+					cam.reparent(self)
+					# Asegurar posicion relativa correcta de la camara
+					cam.position = Vector2.ZERO
+			visible = true
 			if sprite:
 				sprite.modulate = Color.WHITE
 				sprite.play("run")
@@ -213,6 +230,7 @@ func _physics_process(delta: float) -> void:
 		collision_layer = 0
 		collision_mask = 0
 		fall_timeout = 2.5
+		SFXManager.play("fall down")
 		var cam: Camera2D = $Camera2D
 		if cam:
 			cam.reparent(get_tree().current_scene)
@@ -297,6 +315,8 @@ func die(cause: String = "") -> void:
 	if cause == "fall":
 		GameManager.on_player_death(cause)
 		return
+	# Muerte por bug o servidor
+	SFXManager.play("video-game-death")
 	# Visual feedback
 	if sprite:
 		sprite.modulate = Color(1, 0.3, 0.3, 0.7)
@@ -332,12 +352,15 @@ signal video_key_collected
 func apply_powerup(type: String, _duration: float) -> void:
 	match type:
 		"code":
+			SFXManager.play("correct-game-show-alert-499485")
 			has_code_charge = true
 			emit_signal("powerup_changed", "code", true)
 		"cpu":
+			SFXManager.play("correct-game-show-alert-499485")
 			has_cpu_charge = true
 			emit_signal("powerup_changed", "cpu", true)
 		"key":
+			SFXManager.play("correct-game-show-alert-499485")
 			GameManager.keys_collected += 1
 			GameManager.keys_changed.emit(GameManager.keys_collected)
 			emit_signal("video_key_collected")

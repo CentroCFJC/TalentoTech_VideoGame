@@ -18,6 +18,7 @@ const BEAM_HEIGHT: float = 1200.0
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
 func _ready() -> void:
+	add_to_group("__powerups_runtime__")
 	collision_layer = 8
 	collision_mask = 1
 	body_entered.connect(_on_body_entered)
