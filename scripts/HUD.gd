@@ -10,14 +10,12 @@ extends CanvasLayer
 
 # Game Over panel built from background image + dynamic labels
 var _gameover_card: TextureRect = null
-var _gameover_score_value: Label = null
-var _gameover_bugs_value: Label = null
-var _gameover_servers_value: Label = null
+var _camper_cards: Array[Panel] = []
+var _text_blur_shader: Shader = null
 var _gameover_death_cause: Label = null
 var _gameover_death_avoid: Label = null
 var _gameover_death_cause_icon: TextureRect = null
 var _gameover_death_detail_icon: TextureRect = null
-var _gameover_record_label: Label = null
 var _gameover_restart_cta_label: Label = null
 
 # Top panels (built dynamically)
@@ -59,6 +57,7 @@ var _watched_videos: Array[String] = []
 const VIDEO_FOLDER: String = "res://assets/videos/"
 const THUMBNAIL_FOLDER: String = "res://assets/miniaturas/"
 const RPI_VIDEO_SUFFIX: String = "_rpi"
+const LOW_QUALITY_VIDEO_SUFFIX: String = "_720p"
 const RPI_BUFFERING_MSEC: int = 1200
 const DEFAULT_BUFFERING_MSEC: int = 500
 var _video_panel: PanelContainer = null
@@ -85,15 +84,24 @@ const GAME_OVER_PANEL_TEXTURE: String = "res://assets/gameover/gameover_panel.pn
 const GAME_OVER_PANEL_SIZE: Vector2 = Vector2(1085, 1450)
 
 # Text placement rectangles in native panel coordinates (1085x1450)
-const GAME_OVER_SCORE_RECT: Rect2 = Rect2(Vector2(80, 330), Vector2(925, 200))
-const GAME_OVER_RECORD_RECT: Rect2 = Rect2(Vector2(80, 470), Vector2(925, 60))
-const GAME_OVER_BUGS_RECT: Rect2 = Rect2(Vector2(150, 530), Vector2(400, 180))
-const GAME_OVER_SERVERS_RECT: Rect2 = Rect2(Vector2(535, 530), Vector2(400, 180))
-const GAME_OVER_DEATH_TITLE_RECT: Rect2 = Rect2(Vector2(340, 760), Vector2(560, 140))
-const GAME_OVER_DEATH_DETAIL_RECT: Rect2 = Rect2(Vector2(180, 930), Vector2(570, 220))
-const GAME_OVER_DEATH_CAUSE_ICON_RECT: Rect2 = Rect2(Vector2(230, 775), Vector2(110, 110))
-const GAME_OVER_DEATH_DETAIL_ICON_RECT: Rect2 = Rect2(Vector2(770, 985), Vector2(110, 110))
-const GAME_OVER_CTA_RECT: Rect2 = Rect2(Vector2(180, 1150), Vector2(725, 150))
+const GAME_OVER_GRID_ORIGIN: Vector2 = Vector2(183, 370)
+const GAME_OVER_CARD_SIZE: Vector2 = Vector2(350, 120)
+const GAME_OVER_CARD_GAP: Vector2 = Vector2(20, 10)
+const GAME_OVER_DEATH_TITLE_RECT: Rect2 = Rect2(Vector2(340, 815), Vector2(560, 140))
+const GAME_OVER_DEATH_DETAIL_RECT: Rect2 = Rect2(Vector2(180, 1005), Vector2(570, 220))
+const GAME_OVER_DEATH_CAUSE_ICON_RECT: Rect2 = Rect2(Vector2(230, 830), Vector2(110, 110))
+const GAME_OVER_DEATH_DETAIL_ICON_RECT: Rect2 = Rect2(Vector2(770, 1060), Vector2(110, 110))
+const GAME_OVER_CTA_RECT: Rect2 = Rect2(Vector2(180, 1225), Vector2(725, 150))
+
+# Campista data: video basename → title + subtitle
+const CAMPER_DATA: Array[Dictionary] = [
+	{"video": "Andres-Felipe-Baja", "title": "ANDRÉS FELIPE SERNA", "subtitle": "Estudiante Ing. de Sistemas"},
+	{"video": "Angela-", "title": "ANGELA MARÍA HENAO", "subtitle": "Campista y emprendedora"},
+	{"video": "Familia-Tech", "title": "LA FAMILIA DOMINGUEZ", "subtitle": "Familia Campista"},
+	{"video": "Jorge", "title": "JORGE LEONARDO MARÍN", "subtitle": "Ing. Industrial y Traductor"},
+	{"video": "Video-La-Juanpis", "title": "LA JUANPIS", "subtitle": "Activista LGBTIQ+"},
+	{"video": "Video-Sebastían-Baja", "title": "JUAN SEBASTIÁN CAMACHO", "subtitle": "Ganador Hackaton 2025 Armenia"},
+]
 
 class StatRow:
 	var row: HBoxContainer
@@ -228,20 +236,8 @@ func _show_game_over() -> void:
 			_logo_panel.show()
 	_minimize_panel.hide()
 
-	# Populate dynamic labels
-	if _gameover_score_value:
-		_gameover_score_value.text = "%d" % GameManager.score
-	if _gameover_record_label:
-		if GameManager.is_new_record and GameManager.score > 0:
-			_gameover_record_label.text = "¡NUEVO RÉCORD!"
-			_gameover_record_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
-		else:
-			_gameover_record_label.text = "RÉCORD: %d" % GameManager.best_score
-			_gameover_record_label.add_theme_color_override("font_color", Color(0.82, 0.95, 1.0))
-	if _gameover_bugs_value:
-		_gameover_bugs_value.text = "%d" % GameManager.bugs_eliminated
-	if _gameover_servers_value:
-		_gameover_servers_value.text = "%d" % GameManager.servers_secured
+	# Update camper cards based on watched videos
+	_update_camper_cards()
 
 	_build_death_cause_ui()
 
@@ -481,6 +477,8 @@ func _get_video_basename(video_path: String) -> String:
 	var basename := video_path.get_file().get_basename()
 	if basename.ends_with(RPI_VIDEO_SUFFIX):
 		basename = basename.trim_suffix(RPI_VIDEO_SUFFIX)
+	elif basename.ends_with(LOW_QUALITY_VIDEO_SUFFIX):
+		basename = basename.trim_suffix(LOW_QUALITY_VIDEO_SUFFIX)
 	return basename
 
 func update_key_panel() -> void:
@@ -765,9 +763,22 @@ func _collect_video_paths() -> Array[String]:
 			_video_paths = result
 			return result
 
+	# Modo normal: preferimos las versiones reducidas *_720p.ogv. Si existen
+	# para la carpeta, se usan exclusivamente; si no hay ninguna, usamos los
+	# .ogv originales. Se excluyen siempre las versiones *_rpi.ogv (legacy).
+	var has_720p: bool = false
 	for f in files:
-		if f.ends_with(".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
-			result.append(VIDEO_FOLDER + f)
+		if f.ends_with(LOW_QUALITY_VIDEO_SUFFIX + ".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
+			has_720p = true
+			break
+
+	for f in files:
+		if has_720p:
+			if f.ends_with(LOW_QUALITY_VIDEO_SUFFIX + ".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
+				result.append(VIDEO_FOLDER + f)
+		else:
+			if f.ends_with(".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
+				result.append(VIDEO_FOLDER + f)
 	result.sort()
 	_video_paths = result
 	return result
@@ -952,25 +963,29 @@ func _setup_game_over_panel() -> void:
 		_gameover_card.texture = load(GAME_OVER_PANEL_TEXTURE)
 	gameover_panel.add_child(_gameover_card)
 
-	# Score value
-	_gameover_score_value = _create_panel_label(GAME_OVER_SCORE_RECT, 120, Color(0.55, 0.90, 1.0))
-	_gameover_score_value.text = "0"
-	_gameover_card.add_child(_gameover_score_value)
+	# Shared blur shader for locked camper card text
+	_text_blur_shader = Shader.new()
+	_text_blur_shader.code = """
+shader_type canvas_item;
 
-	# Record / new record label
-	_gameover_record_label = _create_panel_label(GAME_OVER_RECORD_RECT, 28, Color(0.82, 0.95, 1.0))
-	_gameover_record_label.text = "RÉCORD: 0"
-	_gameover_card.add_child(_gameover_record_label)
+uniform float blur_size : hint_range(0.0, 2.0) = 1.0;
 
-	# Bugs value
-	_gameover_bugs_value = _create_panel_label(GAME_OVER_BUGS_RECT, 80, Color(0.40, 1.0, 0.55))
-	_gameover_bugs_value.text = "0"
-	_gameover_card.add_child(_gameover_bugs_value)
+void fragment() {
+	vec4 color = texture(TEXTURE, UV) * 0.25;
+	color += texture(TEXTURE, UV + vec2(blur_size, 0.0) * TEXTURE_PIXEL_SIZE) * 0.125;
+	color += texture(TEXTURE, UV - vec2(blur_size, 0.0) * TEXTURE_PIXEL_SIZE) * 0.125;
+	color += texture(TEXTURE, UV + vec2(0.0, blur_size) * TEXTURE_PIXEL_SIZE) * 0.125;
+	color += texture(TEXTURE, UV - vec2(0.0, blur_size) * TEXTURE_PIXEL_SIZE) * 0.125;
+	color += texture(TEXTURE, UV + vec2(blur_size, blur_size) * TEXTURE_PIXEL_SIZE) * 0.0625;
+	color += texture(TEXTURE, UV - vec2(blur_size, blur_size) * TEXTURE_PIXEL_SIZE) * 0.0625;
+	color += texture(TEXTURE, UV + vec2(blur_size, -blur_size) * TEXTURE_PIXEL_SIZE) * 0.0625;
+	color += texture(TEXTURE, UV - vec2(blur_size, -blur_size) * TEXTURE_PIXEL_SIZE) * 0.0625;
+	COLOR = color;
+}
+"""
 
-	# Servers value
-	_gameover_servers_value = _create_panel_label(GAME_OVER_SERVERS_RECT, 80, Color(0.55, 0.85, 1.0))
-	_gameover_servers_value.text = "0"
-	_gameover_card.add_child(_gameover_servers_value)
+	# Camper cards grid (2 columns × 3 rows)
+	_setup_camper_cards()
 
 	# Death cause title
 	_gameover_death_cause = _create_panel_label(GAME_OVER_DEATH_TITLE_RECT, 36, Color(1.0, 0.35, 0.25))
@@ -992,6 +1007,153 @@ func _setup_game_over_panel() -> void:
 	_gameover_restart_cta_label = _create_panel_label(GAME_OVER_CTA_RECT, 38, Color(0.35, 0.95, 1.0))
 	_gameover_restart_cta_label.text = "PRESIONA EL BOTÓN PARA REINICIAR"
 	_gameover_card.add_child(_gameover_restart_cta_label)
+
+# ── Camper cards ───────────────────────────────────────────────
+
+func _setup_camper_cards() -> void:
+	_camper_cards.clear()
+	for i in range(CAMPER_DATA.size()):
+		var data: Dictionary = CAMPER_DATA[i]
+		var card := _create_camper_card(data)
+		var row: int = i / 2
+		var col: int = i % 2
+		card.position = Vector2(
+			GAME_OVER_GRID_ORIGIN.x + col * (GAME_OVER_CARD_SIZE.x + GAME_OVER_CARD_GAP.x),
+			GAME_OVER_GRID_ORIGIN.y + row * (GAME_OVER_CARD_SIZE.y + GAME_OVER_CARD_GAP.y)
+		)
+		card.size = GAME_OVER_CARD_SIZE
+		_gameover_card.add_child(card)
+		_camper_cards.append(card)
+
+func _create_camper_card(data: Dictionary) -> Panel:
+	var card := Panel.new()
+	card.custom_minimum_size = GAME_OVER_CARD_SIZE
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.08, 0.16, 0.85)
+	style.border_color = Color(0.35, 0.60, 0.95, 0.6)
+	style.set_border_width_all(2)
+	style.corner_radius_top_left = 10
+	style.corner_radius_top_right = 10
+	style.corner_radius_bottom_left = 10
+	style.corner_radius_bottom_right = 10
+	style.content_margin_left = 10
+	style.content_margin_right = 10
+	style.content_margin_top = 8
+	style.content_margin_bottom = 8
+	style.anti_aliasing = true
+	card.add_theme_stylebox_override("panel", style)
+
+	var thumb_size: float = 90.0
+	var thumb_y: float = (GAME_OVER_CARD_SIZE.y - thumb_size) * 0.5
+	var text_x: float = thumb_size + 20.0
+	var text_w: float = GAME_OVER_CARD_SIZE.x - text_x - 20.0
+
+	# Thumbnail
+	var thumb := TextureRect.new()
+	thumb.name = "Thumbnail"
+	var thumb_path: String = THUMBNAIL_FOLDER + data["video"] + ".png"
+	if ResourceLoader.exists(thumb_path):
+		thumb.texture = load(thumb_path)
+	thumb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	thumb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	thumb.position = Vector2(8, thumb_y)
+	thumb.size = Vector2(thumb_size, thumb_size)
+	thumb.clip_contents = true
+	card.add_child(thumb)
+
+	# Dark overlay on thumbnail (for undiscovered state)
+	var overlay := ColorRect.new()
+	overlay.name = "Overlay"
+	overlay.position = Vector2(8, thumb_y)
+	overlay.size = Vector2(thumb_size, thumb_size)
+	overlay.color = Color(0, 0, 0, 0)
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(overlay)
+
+	# Title
+	var title := Label.new()
+	_apply_mono(title)
+	title.name = "Title"
+	title.text = data["title"]
+	title.position = Vector2(text_x, 10)
+	title.size = Vector2(text_w, 44)
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color(0.92, 0.95, 1.0, 1.0))
+	title.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.7))
+	title.add_theme_constant_override("outline_size", 4)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var title_blur := ShaderMaterial.new()
+	title_blur.shader = _text_blur_shader
+	title.material = title_blur
+	card.add_child(title)
+
+	# Subtitle
+	var subtitle := Label.new()
+	_apply_mono(subtitle)
+	subtitle.name = "Subtitle"
+	subtitle.text = data["subtitle"]
+	subtitle.position = Vector2(text_x, 58)
+	subtitle.size = Vector2(text_w, 54)
+	subtitle.add_theme_font_size_override("font_size", 17)
+	subtitle.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0, 0.9))
+	subtitle.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.6))
+	subtitle.add_theme_constant_override("outline_size", 3)
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	subtitle.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	var subtitle_blur := ShaderMaterial.new()
+	subtitle_blur.shader = _text_blur_shader
+	subtitle.material = subtitle_blur
+	card.add_child(subtitle)
+
+	return card
+
+func _update_camper_cards() -> void:
+	for i in range(_camper_cards.size()):
+		var card: Panel = _camper_cards[i]
+		if i >= CAMPER_DATA.size():
+			continue
+		var data: Dictionary = CAMPER_DATA[i]
+		var discovered: bool = _is_camper_discovered(data["video"])
+
+		var thumb: TextureRect = card.get_node_or_null("Thumbnail")
+		var overlay: ColorRect = card.get_node_or_null("Overlay")
+		var title: Label = card.get_node_or_null("Title")
+		var subtitle: Label = card.get_node_or_null("Subtitle")
+
+		if discovered:
+			if thumb:
+				thumb.modulate = Color.WHITE
+			if overlay:
+				overlay.color = Color(0, 0, 0, 0)
+			if title:
+				title.visible = true
+				title.modulate = Color.WHITE
+				if title.material:
+					title.material.set_shader_parameter("blur_size", 0.0)
+			if subtitle:
+				subtitle.visible = true
+				subtitle.modulate = Color.WHITE
+				if subtitle.material:
+					subtitle.material.set_shader_parameter("blur_size", 0.0)
+			card.modulate = Color.WHITE
+		else:
+			if thumb:
+				thumb.modulate = Color(0.45, 0.5, 0.6, 1.0)
+			if overlay:
+				overlay.color = Color(0.08, 0.12, 0.2, 0.25)
+			if title:
+				title.visible = false
+			if subtitle:
+				subtitle.visible = false
+			card.modulate = Color(0.7, 0.7, 0.75, 0.85)
+
+func _is_camper_discovered(camper_video: String) -> bool:
+	for path in _video_paths:
+		if _get_video_basename(path) == camper_video:
+			return path in _watched_videos
+	return false
 
 func _create_panel_label(rect: Rect2, font_size: int, font_color: Color) -> Label:
 	var lbl := Label.new()

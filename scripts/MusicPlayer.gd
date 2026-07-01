@@ -1,5 +1,8 @@
 extends AudioStreamPlayer
 
+@export var game_music: AudioStream
+@export var splash_music: AudioStream
+
 var _base_volume_db: float
 var _current_state: GameManager.State
 
@@ -17,17 +20,47 @@ func _ready() -> void:
 	finished.connect(play)
 	GameManager.state_changed.connect(_on_state_changed)
 	add_to_group("music")
+	_apply_stream_for_state(_current_state)
 	_apply_volume()
+	# Iniciar reproduccion segun el estado inicial (la escena trae autoplay=false)
+	if _current_state == GameManager.State.PLAYING or _current_state == GameManager.State.TITLE:
+		play(0.0)
 
 func _on_state_changed(state: GameManager.State) -> void:
 	var old_state = _current_state
 	_current_state = state
-	
+
+	if state == GameManager.State.GAME_OVER:
+		# Sin musica en la pantalla de game over
+		stop()
+		_is_fading = false
+		return
+
+	if state == GameManager.State.DEAD and GameManager.death_cause != "fall":
+		# Muerte por bug/servidor: detener la musica de inmediato
+		stop()
+		_is_fading = false
+		return
+
 	if state == GameManager.State.PLAYING and old_state != GameManager.State.PLAYING:
+		_apply_stream_for_state(state)
 		play(0.0)
 		_is_fading = false
-	
-	_apply_volume()
+		_apply_volume()
+		return
+
+	# DEAD por caida: la musica sigue sonando brevemente hasta el game over.
+
+func _apply_stream_for_state(state: GameManager.State) -> void:
+	var target: AudioStream = game_music
+	if state == GameManager.State.TITLE:
+		target = splash_music
+	if stream != target:
+		var was_playing: bool = playing
+		stop()
+		stream = target
+		if was_playing:
+			play(0.0)
 
 func _process(delta: float) -> void:
 	if _is_fading:
@@ -76,6 +109,6 @@ func _apply_volume() -> void:
 	volume_db = _base_volume_db + linear_to_db(target_linear)
 
 func _get_target_linear() -> float:
-	if _current_state == GameManager.State.TITLE or _current_state == GameManager.State.GAME_OVER:
+	if _current_state == GameManager.State.TITLE:
 		return 0.7
 	return 1.0

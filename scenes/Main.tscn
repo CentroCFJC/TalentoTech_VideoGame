@@ -5,7 +5,8 @@
 [ext_resource type="Script" uid="uid://hv8hnhxdlcwg" path="res://scripts/PlatformSpawner.gd" id="3"]
 [ext_resource type="Texture2D" uid="uid://bj3nnel62q3dq" path="res://assets/background/fondo_1.png" id="5"]
 [ext_resource type="Script" uid="uid://b4nserns57dql" path="res://scripts/Background.gd" id="6"]
-[ext_resource type="AudioStream" uid="uid://cijenokw12vo5" path="res://assets/audio/music/loop.mp3" id="7"]
+[ext_resource type="AudioStream" path="res://assets/audio/music/Pixel Dembow Run.mp3" id="7"]
+[ext_resource type="AudioStream" path="res://assets/audio/music/Golden Key Horizon.mp3" id="10"]
 [ext_resource type="Script" uid="uid://lmv5x0pc5cc7" path="res://scripts/MusicPlayer.gd" id="8"]
 [ext_resource type="Texture2D" uid="uid://cfsfklkw6536n" path="res://assets/splash/splash.jpg" id="9"]
 
@@ -71,7 +72,9 @@ offset_bottom = 140.0
 grow_horizontal = 2
 
 [node name="MusicPlayer" type="AudioStreamPlayer" parent="." unique_id=1729335062]
-stream = ExtResource("7")
+stream = ExtResource("10")
 volume_db = -6.0
-autoplay = true
+autoplay = false
 script = ExtResource("8")
+game_music = ExtResource("7")
+splash_music = ExtResource("10")

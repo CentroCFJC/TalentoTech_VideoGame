@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bb46ui8xwdqsr"
+path="res://.godot/imported/Golden Key Horizon.mp3-17629b4c9a78f8f742d28dac5030d0f4.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Golden Key Horizon.mp3"
+dest_files=["res://.godot/imported/Golden Key Horizon.mp3-17629b4c9a78f8f742d28dac5030d0f4.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

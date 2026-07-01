@@ -14,6 +14,15 @@ const DOUBLE_JUMP_MULTIPLIER: float = 0.85 # Second jump is slightly weaker
 
 @export var run_animation_scale: float = 0.88
 
+# Altura objetivo del sprite en pantalla (px). Los frames nuevos (256x246)
+# se escalan dinamicamente para coincidir con la altura original (49px),
+# manteniendo el tamano y la fisica del juego sin importar la resolucion del arte.
+const TARGET_SPRITE_HEIGHT: float = 49.0
+# Altura de referencia canónica del arte nuevo (correr recortado). salto/caida
+# son 256px (sin barra) pero comparten esta referencia para que el personaje
+# se vea del mismo tamano en todas las animaciones nuevas.
+const NEW_ART_REFERENCE_HEIGHT: float = 246.0
+
 # State
 var current_speed: float = AUTO_RUN_SPEED
 var coyote_timer: float = 0.0
@@ -45,7 +54,7 @@ func _ready() -> void:
 	start_x = global_position.x
 	
 	_setup_sprite_frames()
-	
+
 	# Connect to game state changes
 	GameManager.state_changed.connect(_on_state_changed)
 	
@@ -95,11 +104,23 @@ func _process(delta: float) -> void:
 func _update_animation_scale_and_position() -> void:
 	if not sprite:
 		return
-	var s: float = 1.0
-	if sprite.animation == "run":
-		s = run_animation_scale
+	var tex: Texture2D = sprite.sprite_frames.get_frame_texture(sprite.animation, sprite.frame)
+	var tex_h: float = float(tex.get_height()) if tex else TARGET_SPRITE_HEIGHT
+	var s: float
+	match sprite.animation:
+		"run", "jump", "double_jump", "fall", "death":
+			# Arte nuevo: usar referencia unificada para mismo tamano de personaje
+			s = TARGET_SPRITE_HEIGHT / NEW_ART_REFERENCE_HEIGHT
+			if sprite.animation == "run":
+				s *= run_animation_scale
+		_:
+			# Arte viejo: escalar dinamicamente segun altura real del frame
+			s = TARGET_SPRITE_HEIGHT / tex_h
 	sprite.scale = Vector2(s, s)
-	sprite.position.y = 20.0 - 24.5 * s
+	# Pegar los pies al borde inferior del CollisionShape2D (y = +20)
+	# Bajamos 8 px extra para que el sprite no parezca flotar sobre el suelo.
+	var displayed_h: float = tex_h * s
+	sprite.position.y = 28.0 - displayed_h * 0.5
 
 func _update_animation() -> void:
 	if is_dead:
@@ -116,7 +137,9 @@ func _update_animation() -> void:
 				if sprite and sprite.animation != "jump":
 					sprite.play("jump")
 		else:
-			if sprite and sprite.animation != "fall":
+			if sprite.animation == "double_jump" and sprite.is_playing():
+				pass  # Esperar a que termine el doble salto antes de caer
+			elif sprite and sprite.animation != "fall":
 				sprite.play("fall")
 	else:
 		if sprite and sprite.animation != "run":
@@ -124,47 +147,47 @@ func _update_animation() -> void:
 
 func _setup_sprite_frames() -> void:
 	var sprite_frames = SpriteFrames.new()
-	
+
 	sprite_frames.add_animation("run")
 	sprite_frames.add_animation("jump")
 	sprite_frames.add_animation("double_jump")
 	sprite_frames.add_animation("fall")
 	sprite_frames.add_animation("death")
-	
-	sprite_frames.set_animation_speed("run", 12.0)
-	sprite_frames.set_animation_speed("jump", 10.0)
-	sprite_frames.set_animation_speed("double_jump", 12.0)
-	sprite_frames.set_animation_speed("fall", 8.0)
-	sprite_frames.set_animation_speed("death", 10.0)
+
+	sprite_frames.set_animation_speed("run", 32.0)
+	sprite_frames.set_animation_speed("jump", 30.0)
+	sprite_frames.set_animation_speed("double_jump", 60.0)
+	sprite_frames.set_animation_speed("fall", 30.0)
+	sprite_frames.set_animation_speed("death", 45.0)
 	
 	sprite_frames.set_animation_loop("run", true)
 	sprite_frames.set_animation_loop("jump", false)
 	sprite_frames.set_animation_loop("double_jump", false)
-	sprite_frames.set_animation_loop("fall", true)
+	sprite_frames.set_animation_loop("fall", false)
 	sprite_frames.set_animation_loop("death", false)
 
-	for i in range(1, 7):
-		var path = "res://assets/rocket/Run_%d.png" % i
+	for i in range(1, 53):
+		var path = "res://assets/rocket_v2/correr/frame_%03d.png" % i
 		if ResourceLoader.exists(path):
 			sprite_frames.add_frame("run", load(path))
 			
-	for i in range(1, 3):
-		var path = "res://assets/rocket/Jump_%d.png" % i
+	for i in range(33, 77):
+		var path = "res://assets/rocket_v2/salto/frame_%03d.png" % i
 		if ResourceLoader.exists(path):
 			sprite_frames.add_frame("jump", load(path))
 			
-	for i in range(1, 5):
-		var path = "res://assets/rocket/DoubleJump_%d.png" % i
+	for i in range(30, 92):
+		var path = "res://assets/rocket_v2/doble_salto/frame_%03d.png" % i
 		if ResourceLoader.exists(path):
 			sprite_frames.add_frame("double_jump", load(path))
 			
-	for i in range(1, 3):
-		var path = "res://assets/rocket/Fall_%d.png" % i
+	for i in range(77, 103):
+		var path = "res://assets/rocket_v2/caida/frame_%03d.png" % i
 		if ResourceLoader.exists(path):
 			sprite_frames.add_frame("fall", load(path))
 			
-	for i in range(1, 5):
-		var path = "res://assets/rocket/Death_%d.png" % i
+	for i in range(35, 122):
+		var path = "res://assets/rocket_v2/death/frame_%03d.png" % i
 		if ResourceLoader.exists(path):
 			sprite_frames.add_frame("death", load(path))
 

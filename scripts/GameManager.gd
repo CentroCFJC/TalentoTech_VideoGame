@@ -24,6 +24,9 @@ var death_cause: String = ""
 # Key collection progress (max 6)
 var keys_collected: int = 0
 
+# Background series rotation (cycles 1 → 2 → 3 → 1 each session)
+var bg_series: int = 3
+
 # Per-run statistics
 var bugs_eliminated: int = 0
 var servers_secured: int = 0
@@ -47,6 +50,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Start a new game from title screen
 func start_game() -> void:
+	bg_series = bg_series % 3 + 1
 	score = 0
 	is_new_record = false
 	death_cause = ""
@@ -76,21 +80,33 @@ func on_player_death(cause: String = "") -> void:
 	death_cause = cause
 	current_state = State.DEAD
 	state_changed.emit(current_state)
-	
-	# Transition to GAME_OVER after death animation
-	await get_tree().create_timer(1.0).timeout
-	
+
+	# Esperar a que termine la animacion de muerte antes de pasar al game over.
+	# Las muertes por caida no reproducen la animacion, asi que usamos un delay fijo.
+	if cause != "fall":
+		var player = get_tree().get_first_node_in_group("player")
+		if is_instance_valid(player) and player.sprite:
+			var frames_count: int = player.sprite.sprite_frames.get_frame_count("death")
+			var death_fps: float = player.sprite.sprite_frames.get_animation_speed("death")
+			var death_duration: float = float(frames_count) / death_fps + 0.1
+			await get_tree().create_timer(death_duration).timeout
+		else:
+			await get_tree().create_timer(2.0).timeout
+	else:
+		await get_tree().create_timer(1.0).timeout
+
 	# Update best score
 	is_new_record = score > best_score
 	if is_new_record:
 		best_score = score
 		_save_best_score()
-	
+
 	current_state = State.GAME_OVER
 	state_changed.emit(current_state)
 
 ## Restart the game
 func restart_game() -> void:
+	bg_series = bg_series % 3 + 1
 	score = 0
 	is_new_record = false
 	death_cause = ""
@@ -102,8 +118,12 @@ func restart_game() -> void:
 	bugs_eliminated_changed.emit(bugs_eliminated)
 	servers_secured_changed.emit(servers_secured)
 	current_state = State.PLAYING
-	state_changed.emit(current_state)
 	get_tree().reload_current_scene()
+	# No emitimos state_changed aqui: reload_current_scene() es diferido (al
+	# final del frame), asi que el HUD viejo (aun vivo) la recibiria e intentaria
+	# buscar el player en la escena que se esta recargando, causando un error.
+	# El nuevo HUD y MusicPlayer leen current_state en sus _ready() y se
+	# inicializan correctamente con State.PLAYING.
 
 ## Increment per-run bug elimination counter (Programación skill)
 func add_bug_eliminated() -> void:
