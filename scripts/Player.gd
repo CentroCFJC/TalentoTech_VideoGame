@@ -23,6 +23,7 @@ var is_falling_out: bool = false
 var fall_timeout: float = 0.0
 var start_x: float = 0.0
 var jumps_remaining: int = MAX_JUMPS
+var _jump_lockout_timer: float = 0.0
 
 # ── PowerUp charge state (one-time death evade) ───────────────
 var has_code_charge: bool = false
@@ -61,6 +62,9 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			visible = true
 			collision_layer = 1
 			collision_mask = 2 | 16  # Environment + Hazards
+			jump_buffer_timer = 0.0
+			coyote_timer = 0.0
+			_jump_lockout_timer = 0.15
 			if sprite:
 				sprite.modulate = Color.WHITE
 				sprite.play("run")
@@ -223,26 +227,30 @@ func _physics_process(delta: float) -> void:
 		coyote_timer = COYOTE_TIME
 		jumps_remaining = MAX_JUMPS
 
-	# --- Jump buffer ---
-	jump_buffer_timer -= delta
-	if Input.is_action_just_pressed("jump"):
-		jump_buffer_timer = JUMP_BUFFER_TIME
+	# --- Jump lockout (prevents the jump button used to start the game from also jumping) ---
+	if _jump_lockout_timer > 0.0:
+		_jump_lockout_timer -= delta
+	else:
+		# --- Jump buffer ---
+		jump_buffer_timer -= delta
+		if Input.is_action_just_pressed("jump"):
+			jump_buffer_timer = JUMP_BUFFER_TIME
 
-	# --- Jump (ground / coyote) ---
-	if jump_buffer_timer > 0.0 and coyote_timer > 0.0:
-		velocity.y = JUMP_VELOCITY
-		coyote_timer = 0.0
-		jump_buffer_timer = 0.0
-		jumps_remaining = MAX_JUMPS - 1
-		if jump_sfx:
-			jump_sfx.play()
-	# --- Double jump (air) ---
-	elif Input.is_action_just_pressed("jump") and jumps_remaining > 0 and coyote_timer <= 0.0:
-		velocity.y = JUMP_VELOCITY * DOUBLE_JUMP_MULTIPLIER
-		jumps_remaining -= 1
-		jump_buffer_timer = 0.0
-		if double_jump_sfx:
-			double_jump_sfx.play()
+		# --- Jump (ground / coyote) ---
+		if jump_buffer_timer > 0.0 and coyote_timer > 0.0:
+			velocity.y = JUMP_VELOCITY
+			coyote_timer = 0.0
+			jump_buffer_timer = 0.0
+			jumps_remaining = MAX_JUMPS - 1
+			if jump_sfx:
+				jump_sfx.play()
+		# --- Double jump (air) ---
+		elif Input.is_action_just_pressed("jump") and jumps_remaining > 0 and coyote_timer <= 0.0:
+			velocity.y = JUMP_VELOCITY * DOUBLE_JUMP_MULTIPLIER
+			jumps_remaining -= 1
+			jump_buffer_timer = 0.0
+			if double_jump_sfx:
+				double_jump_sfx.play()
 
 	# Variable jump height: cut jump short on release
 	if Input.is_action_just_released("jump") and velocity.y < 0:

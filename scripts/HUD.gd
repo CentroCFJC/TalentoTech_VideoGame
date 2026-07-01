@@ -827,12 +827,16 @@ func _on_video_key_collected() -> void:
 		if _minimize_tween:
 			_minimize_tween.kill()
 
-		_can_minimize_video = true
-		_minimize_panel.show()
-		_minimize_panel.modulate.a = 1.0
-		_minimize_tween = create_tween().bind_node(_minimize_panel).set_loops()
-		_minimize_tween.tween_property(_minimize_panel, "modulate:a", 0.3, 0.6).set_trans(Tween.TRANS_SINE)
-		_minimize_tween.tween_property(_minimize_panel, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+		_minimize_tween = create_tween().bind_node(_minimize_panel)
+		_minimize_tween.tween_interval(5.0)
+		_minimize_tween.tween_callback(func():
+			_can_minimize_video = true
+			_minimize_panel.show()
+			_minimize_panel.modulate.a = 1.0
+			_minimize_tween = create_tween().bind_node(_minimize_panel).set_loops()
+			_minimize_tween.tween_property(_minimize_panel, "modulate:a", 0.3, 0.6).set_trans(Tween.TRANS_SINE)
+			_minimize_tween.tween_property(_minimize_panel, "modulate:a", 1.0, 0.6).set_trans(Tween.TRANS_SINE)
+		)
 
 		_video_player.play()
 
@@ -871,15 +875,19 @@ func _enter_pip_mode() -> void:
 	var pip_x := PIP_MARGIN.x
 	var pip_y := viewport_size.y - PIP_SIZE.y - PIP_MARGIN.y
 
+	var full_size := viewport_size - Vector2(120, 120)
+
+	_video_panel.anchors_preset = Control.PRESET_TOP_LEFT
 	_video_panel.z_index = 100
+	_video_panel.position = Vector2(60, 60)
+	_video_panel.size = full_size
 
 	_video_player.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
-	var pip_tween := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	pip_tween.tween_property(_video_panel, "offset_left", pip_x, 0.3)
-	pip_tween.tween_property(_video_panel, "offset_top", pip_y, 0.3)
-	pip_tween.tween_property(_video_panel, "offset_right", pip_x + PIP_SIZE.x - viewport_size.x, 0.3)
-	pip_tween.tween_property(_video_panel, "offset_bottom", -PIP_MARGIN.y, 0.3)
+	var pip_tween := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	pip_tween.set_parallel(true)
+	pip_tween.tween_property(_video_panel, "position", Vector2(pip_x, pip_y), 0.7)
+	pip_tween.tween_property(_video_panel, "size", PIP_SIZE, 0.7)
 
 	get_tree().paused = false
 

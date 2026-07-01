@@ -41,9 +41,13 @@ enum Pattern {
 
 # Key pattern — easy section, distributed across the session
 const MAX_KEYS_PER_SESSION: int = 6
-const MIN_KEY_SCORE_SPACING: int = 1800
+const MIN_KEY_SCORE_SPACING: int = 2500
 var _next_key_score: int = 600
 var _key_chunks_remaining: int = 0
+
+# Progression: cybersecurity / servers chunk unlocks after first key
+var _queue_cpu_tutorial: bool = false
+var _cyber_enemies_unlocked: bool = false
 
 # Server settings
 const SERVER_WIDTH: float = 48.0
@@ -77,15 +81,20 @@ func _ready() -> void:
 	# Connect to game state
 	GameManager.state_changed.connect(_on_state_changed)
 	GameManager.score_changed.connect(_on_score_changed)
+	GameManager.keys_changed.connect(_on_keys_changed)
 
 func _on_state_changed(new_state: GameManager.State) -> void:
 	match new_state:
 		GameManager.State.PLAYING:
 			_next_key_score = 600
 			_key_chunks_remaining = 0
+			_queue_cpu_tutorial = false
+			_cyber_enemies_unlocked = false
 		GameManager.State.TITLE:
 			_next_key_score = 600
 			_key_chunks_remaining = 0
+			_queue_cpu_tutorial = false
+			_cyber_enemies_unlocked = false
 
 func _on_score_changed(score: int) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
@@ -93,8 +102,19 @@ func _on_score_changed(score: int) -> void:
 	if score >= _next_key_score and _key_chunks_remaining == 0:
 		if GameManager.keys_collected >= MAX_KEYS_PER_SESSION:
 			return
+		# First key section of the session: queue the CPU/cybersecurity tutorial
+		# right after it, so the tutorial always follows the first key pattern.
+		if GameManager.keys_collected == 0:
+			_queue_cpu_tutorial = true
 		_key_chunks_remaining = 4
 		_next_key_score = score + MIN_KEY_SCORE_SPACING
+
+func _on_keys_changed(count: int) -> void:
+	if GameManager.current_state != GameManager.State.PLAYING:
+		return
+	# First key of the session unlocks the cybersecurity / servers tutorial
+	if count == 1 and not _cyber_enemies_unlocked:
+		_queue_cpu_tutorial = true
 
 func _process(delta: float) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
@@ -156,7 +176,7 @@ func _spawn_powerup_for_obstacle_pattern(chunk: Node2D, chunk_x: float) -> void:
 	if GameManager.score < 50:
 		return
 	var p_type: String
-	if GameManager.score < 150:
+	if GameManager.score < 150 or not _cyber_enemies_unlocked:
 		p_type = "code"
 	else:
 		p_type = "code" if rng.randf() > 0.5 else "cpu"
@@ -193,7 +213,10 @@ func _generate_chunk(chunk_x: float) -> void:
 	var difficulty: int = _get_difficulty()
 	var patterns := _get_available_patterns(difficulty)
 	
-	# Chunk 0: intro flat, Chunks 1-2: movement tutorials, Chunks 3-4: powerup tutorials, Chunk 5: cooldown flat
+	# Chunk 0: intro flat, Chunks 1-2: movement tutorials, Chunk 3: code powerup tutorial,
+	# Chunk 4: now procedural content, Chunk 5: cooldown flat.
+	# CPU / cybersecurity tutorial is queued together with the first key section,
+	# so it is generated immediately after the four key-easy chunks end.
 	var pattern: Pattern
 	if chunk_x < CHUNK_WIDTH:
 		_build_flat_ground(chunk)
@@ -207,9 +230,6 @@ func _generate_chunk(chunk_x: float) -> void:
 	elif int(chunk_x / CHUNK_WIDTH) == 3:
 		_build_code_tutorial(chunk)
 		return
-	elif int(chunk_x / CHUNK_WIDTH) == 4:
-		_build_cpu_tutorial(chunk)
-		return
 	elif int(chunk_x / CHUNK_WIDTH) == 5:
 		_build_flat_ground(chunk)
 		return
@@ -219,6 +239,11 @@ func _generate_chunk(chunk_x: float) -> void:
 		_key_chunks_remaining -= 1
 		if spawn_key:
 			_spawn_key_powerup(chunk, chunk_x)
+		return
+	elif _queue_cpu_tutorial:
+		_cyber_enemies_unlocked = true
+		_queue_cpu_tutorial = false
+		_build_cpu_tutorial(chunk)
 		return
 	else:
 		pattern = patterns[rng.randi_range(0, patterns.size() - 1)]
@@ -297,7 +322,7 @@ func _build_code_tutorial(chunk: Node2D) -> void:
 	# Tutorial panel
 	_create_powerup_tutorial_panel(
 		chunk,
-		"Habilidad: Programación te protege de bugs",
+		"Programación te protege de bugs",
 		"res://assets/powerups/powerup_code.png",
 		"res://assets/bug/bug_1.png",
 		Vector2(30.0, last_platform_y - 165)
@@ -309,20 +334,22 @@ func _build_code_tutorial(chunk: Node2D) -> void:
 
 ## CPU tutorial — powerup_cpu protects from servers.
 func _build_cpu_tutorial(chunk: Node2D) -> void:
-	_create_platform(chunk, 0, last_platform_y, CHUNK_WIDTH)
+	# Reset to base ground so the tutorial is always on flat, readable ground
+	last_platform_y = GROUND_Y
+	_create_platform(chunk, 0, GROUND_Y, CHUNK_WIDTH)
 
 	# Tutorial panel
 	_create_powerup_tutorial_panel(
 		chunk,
-		"Habilidad: Ciberseguridad neutraliza vulnerabilidades",
+		"Ciberseguridad neutraliza vulnerabilidades",
 		"res://assets/powerups/powerup_cpu.png",
 		"res://assets/server/server_red.png",
-		Vector2(30.0, last_platform_y - 165)
+		Vector2(30.0, GROUND_Y - 165)
 	)
 
 	# Powerup then server further ahead
 	_spawn_powerup(chunk, chunk.global_position.x + 250.0, GROUND_Y - 60.0, "cpu")
-	_create_obstacle(chunk, 650.0, last_platform_y - PLATFORM_HEIGHT * 0.5, "server")
+	_create_obstacle(chunk, 650.0, GROUND_Y - PLATFORM_HEIGHT * 0.5, "server")
 
 ## Creates a tutorial panel: text + icon → icon.
 func _create_powerup_tutorial_panel(chunk: Node2D, text: String, icon1_path: String, icon2_path: String, pos: Vector2) -> void:
@@ -639,6 +666,10 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 				type = "bug"
 			else:
 				type = "bug_fly"
+			
+	# Cybersecurity / server enemies remain locked until the CPU tutorial is reached
+	if type == "server" and not _cyber_enemies_unlocked:
+		type = "bug"
 			
 	if type == "server":
 		if world_x - last_server_spawn_x < 1000.0:

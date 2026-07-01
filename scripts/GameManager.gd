@@ -40,8 +40,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		match current_state:
 			State.TITLE:
 				start_game()
+				get_viewport().set_input_as_handled()
 			State.GAME_OVER:
 				restart_game()
+				get_viewport().set_input_as_handled()
 
 ## Start a new game from title screen
 func start_game() -> void:
