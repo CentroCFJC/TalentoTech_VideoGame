@@ -142,19 +142,27 @@ func _detect_low_end_video_mode() -> void:
 	var force_rpi := OS.get_environment("INFINITE_RUNNER_RPI")
 	if force_rpi == "1" or force_rpi.to_lower() == "true":
 		_is_low_end_video_mode = true
+		print("[HUD] Modo de bajo rendimiento forzado por INFINITE_RUNNER_RPI")
 		return
 
 	# En Linux, intentamos detectar arquitecturas ARM de bajo rendimiento.
 	if OS.get_name() != "Linux":
+		print("[HUD] OS no es Linux (", OS.get_name(), "), modo normal")
 		return
 
 	var output: Array = []
 	var exit_code := OS.execute("uname", ["-m"], output, true)
+	print("[HUD] uname -m exit_code=", exit_code, " output=", output)
 	if exit_code == OK and not output.is_empty():
 		var machine: String = output[0].strip_edges().to_lower()
 		# aarch64, arm64, armv7l, armv8, etc.
 		if machine.begins_with("arm") or machine.begins_with("aarch64"):
 			_is_low_end_video_mode = true
+			print("[HUD] Modo de bajo rendimiento detectado para: ", machine)
+		else:
+			print("[HUD] Arquitectura no ARM: ", machine, ", modo normal")
+	else:
+		push_warning("[HUD] No se pudo detectar la arquitectura con uname -m")
 
 func _try_connect_player() -> void:
 	call_deferred("_connect_player_signal")
@@ -223,6 +231,11 @@ func _show_playing_hud() -> void:
 	_connect_player_signal()
 
 func _show_game_over() -> void:
+	print("[HUD] _show_game_over iniciado")
+	if not gameover_panel or not is_instance_valid(gameover_panel):
+		push_error("HUD: GameOverPanel no está disponible")
+		return
+
 	title_panel.visible = false
 	gameover_panel.visible = true
 	if _progress_panel:
@@ -236,13 +249,16 @@ func _show_game_over() -> void:
 			_logo_panel.show()
 	_minimize_panel.hide()
 
+	print("[HUD] Actualizando tarjetas de campistas")
 	# Update camper cards based on watched videos
 	_update_camper_cards()
 
+	print("[HUD] Construyendo UI de causa de muerte")
 	_build_death_cause_ui()
 
 	# Scale and center the panel card to fit the viewport
-	if _gameover_card:
+	if _gameover_card and is_instance_valid(_gameover_card):
+		print("[HUD] Escalando tarjeta de game over")
 		var viewport_size := get_viewport().get_visible_rect().size
 		var margin := 40.0
 		var available_size := viewport_size - Vector2(margin, margin)
@@ -250,10 +266,16 @@ func _show_game_over() -> void:
 		_gameover_card.scale = Vector2(card_scale, card_scale)
 		_gameover_card.position = (viewport_size - GAME_OVER_PANEL_SIZE * card_scale) * 0.5
 
-	gameover_panel.modulate.a = 0.0
-	var tween := create_tween()
-	tween.tween_property(gameover_panel, "modulate:a", 1.0, 0.5)
+	print("[HUD] Iniciando fade del game over")
+	if _is_low_end_video_mode:
+		# En RPi evitamos crear un tween de fade; mostramos el panel directamente.
+		gameover_panel.modulate.a = 1.0
+	else:
+		gameover_panel.modulate.a = 0.0
+		var tween := create_tween()
+		tween.tween_property(gameover_panel, "modulate:a", 1.0, 0.5)
 
+	print("[HUD] Iniciando parpadeo del CTA")
 	_start_blink(_gameover_restart_cta_label)
 
 	if _gameover_timer:
@@ -264,6 +286,7 @@ func _show_game_over() -> void:
 	_gameover_timer.timeout.connect(_on_gameover_timeout)
 	add_child(_gameover_timer)
 	_gameover_timer.start()
+	print("[HUD] _show_game_over completado")
 
 func _on_gameover_timeout() -> void:
 	if GameManager.current_state != GameManager.State.GAME_OVER:
@@ -947,7 +970,9 @@ func _set_music_video_duck(active: bool) -> void:
 # ── Game Over panel — background image + dynamic labels ───────
 
 func _setup_game_over_panel() -> void:
+	print("[HUD] _setup_game_over_panel iniciado. RPi=", _is_low_end_video_mode)
 	if not gameover_panel:
+		push_error("HUD: GameOverPanel no encontrado en la escena")
 		return
 
 	# Clear any legacy children
@@ -960,13 +985,29 @@ func _setup_game_over_panel() -> void:
 	_gameover_card.size = GAME_OVER_PANEL_SIZE
 	_gameover_card.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_gameover_card.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	if ResourceLoader.exists(GAME_OVER_PANEL_TEXTURE):
+
+	# En modo de bajo rendimiento evitamos cargar la textura grande del panel,
+	# que puede agotar la VRAM compartida de la Raspberry Pi. Usamos un fondo
+	# plano oscuro en el panel padre y dejamos las tarjetas y textos encima.
+	if _is_low_end_video_mode:
+		gameover_panel.modulate = Color.WHITE
+		var bg := ColorRect.new()
+		bg.name = "GameOverBackground"
+		bg.color = Color(0.02, 0.04, 0.09, 1.0)
+		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		gameover_panel.add_child(bg)
+		print("[HUD] GameOver: usando fondo plano en modo RPi")
+	elif ResourceLoader.exists(GAME_OVER_PANEL_TEXTURE):
 		_gameover_card.texture = load(GAME_OVER_PANEL_TEXTURE)
+		print("[HUD] GameOver: textura del panel cargada")
 	gameover_panel.add_child(_gameover_card)
 
-	# Shared blur shader for locked camper card text
-	_text_blur_shader = Shader.new()
-	_text_blur_shader.code = """
+	# Shared blur shader for locked camper card text.
+	# En Raspberry Pi / modo de bajo rendimiento los shaders de canvas_item
+	# pueden hacer crashar el driver GPU, así que lo omitimos en esos casos.
+	if not _is_low_end_video_mode:
+		_text_blur_shader = Shader.new()
+		_text_blur_shader.code = """
 shader_type canvas_item;
 
 uniform float blur_size : hint_range(0.0, 2.0) = 1.0;
@@ -1008,6 +1049,8 @@ void fragment() {
 	_gameover_restart_cta_label = _create_panel_label(GAME_OVER_CTA_RECT, 38, Color(0.35, 0.95, 1.0))
 	_gameover_restart_cta_label.text = "PRESIONA EL BOTÓN PARA REINICIAR"
 	_gameover_card.add_child(_gameover_restart_cta_label)
+
+	print("[HUD] _setup_game_over_panel completado")
 
 # ── Camper cards ───────────────────────────────────────────────
 
@@ -1085,9 +1128,10 @@ func _create_camper_card(data: Dictionary) -> Panel:
 	title.add_theme_constant_override("outline_size", 4)
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var title_blur := ShaderMaterial.new()
-	title_blur.shader = _text_blur_shader
-	title.material = title_blur
+	if _text_blur_shader:
+		var title_blur := ShaderMaterial.new()
+		title_blur.shader = _text_blur_shader
+		title.material = title_blur
 	card.add_child(title)
 
 	# Subtitle
@@ -1103,9 +1147,10 @@ func _create_camper_card(data: Dictionary) -> Panel:
 	subtitle.add_theme_constant_override("outline_size", 3)
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	subtitle.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	var subtitle_blur := ShaderMaterial.new()
-	subtitle_blur.shader = _text_blur_shader
-	subtitle.material = subtitle_blur
+	if _text_blur_shader:
+		var subtitle_blur := ShaderMaterial.new()
+		subtitle_blur.shader = _text_blur_shader
+		subtitle.material = subtitle_blur
 	card.add_child(subtitle)
 
 	return card
@@ -1131,12 +1176,12 @@ func _update_camper_cards() -> void:
 			if title:
 				title.visible = true
 				title.modulate = Color.WHITE
-				if title.material:
+				if title.material and title.material is ShaderMaterial:
 					title.material.set_shader_parameter("blur_size", 0.0)
 			if subtitle:
 				subtitle.visible = true
 				subtitle.modulate = Color.WHITE
-				if subtitle.material:
+				if subtitle.material and subtitle.material is ShaderMaterial:
 					subtitle.material.set_shader_parameter("blur_size", 0.0)
 			card.modulate = Color.WHITE
 		else:
@@ -1228,9 +1273,13 @@ func _build_death_cause_ui() -> void:
 
 	if _gameover_death_cause_icon:
 		if show_cause_icon and ResourceLoader.exists(cause_icon_path):
-			_gameover_death_cause_icon.texture = load(cause_icon_path)
+			var cause_tex := load(cause_icon_path)
+			if cause_tex is Texture2D:
+				_gameover_death_cause_icon.texture = cause_tex
 		_gameover_death_cause_icon.visible = show_cause_icon
 	if _gameover_death_detail_icon:
 		if show_detail_icon and ResourceLoader.exists(detail_icon_path):
-			_gameover_death_detail_icon.texture = load(detail_icon_path)
+			var detail_tex := load(detail_icon_path)
+			if detail_tex is Texture2D:
+				_gameover_death_detail_icon.texture = detail_tex
 		_gameover_death_detail_icon.visible = show_detail_icon

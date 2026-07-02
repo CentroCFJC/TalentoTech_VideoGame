@@ -232,8 +232,9 @@ func _physics_process(delta: float) -> void:
 		fall_timeout = 2.5
 		SFXManager.play("fall down")
 		var cam: Camera2D = $Camera2D
-		if cam:
-			cam.reparent(get_tree().current_scene)
+		if cam and is_instance_valid(cam) and get_tree().current_scene and is_instance_valid(get_tree().current_scene):
+			if cam.get_parent() != get_tree().current_scene:
+				cam.reparent(get_tree().current_scene)
 
 	if is_falling_out:
 		velocity.y += gravity * delta

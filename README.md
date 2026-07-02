@@ -79,7 +79,7 @@ El mundo se genera dinámicamente mediante **chunks** de `800px` de ancho. La di
 ## 🚀 Cómo Empezar
 
 ### Requisitos
-1.  **Godot Engine 4.x** (compatible con Forward+ / Mobile).
+1.  **Godot Engine 4.x** (renderer OpenGL 3 / gl_compatibility para máxima compatibilidad, incluida Raspberry Pi 5).
 
 ### Configuración e Instalación
 
@@ -90,6 +90,12 @@ El mundo se genera dinámicamente mediante **chunks** de `800px` de ancho. La di
     ```
 2.  Abre **Godot Engine 4** e importa este proyecto seleccionando el archivo `project.godot`.
 3.  Presiona **F5** para ejecutar la escena principal (`Main.tscn`).
+
+---
+
+## 🍓 Raspberry Pi 5
+
+El proyecto está configurado para usar el renderer **OpenGL 3 (gl_compatibility)** por defecto, que es el más estable en la Raspberry Pi 5.
 
 ---
 

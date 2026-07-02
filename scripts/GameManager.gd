@@ -89,6 +89,7 @@ func update_score_from_distance(player_x: float) -> void:
 func on_player_death(cause: String = "") -> void:
 	if current_state != State.PLAYING:
 		return
+	print("[GameManager] on_player_death causa=", cause)
 	death_cause = cause
 	current_state = State.DEAD
 	state_changed.emit(current_state)
@@ -97,11 +98,15 @@ func on_player_death(cause: String = "") -> void:
 	# Las muertes por caida no reproducen la animacion, asi que usamos un delay fijo.
 	if cause != "fall":
 		var player = get_tree().get_first_node_in_group("player")
-		if is_instance_valid(player) and player.sprite:
-			var frames_count: int = player.sprite.sprite_frames.get_frame_count("death")
-			var death_fps: float = player.sprite.sprite_frames.get_animation_speed("death")
-			var death_duration: float = float(frames_count) / death_fps + 0.1
-			await get_tree().create_timer(death_duration).timeout
+		if is_instance_valid(player) and player.sprite and is_instance_valid(player.sprite):
+			var sf = player.sprite.sprite_frames
+			if sf and sf.has_animation("death") and sf.get_animation_speed("death") > 0.0:
+				var frames_count: int = sf.get_frame_count("death")
+				var death_fps: float = sf.get_animation_speed("death")
+				var death_duration: float = float(frames_count) / death_fps + 0.1
+				await get_tree().create_timer(death_duration).timeout
+			else:
+				await get_tree().create_timer(2.0).timeout
 		else:
 			await get_tree().create_timer(2.0).timeout
 	else:
@@ -113,6 +118,7 @@ func on_player_death(cause: String = "") -> void:
 		best_score = score
 		_save_best_score()
 
+	print("[GameManager] Transición a GAME_OVER")
 	current_state = State.GAME_OVER
 	state_changed.emit(current_state)
 
