@@ -34,9 +34,6 @@ var start_x: float = 0.0
 var jumps_remaining: int = MAX_JUMPS
 var _jump_lockout_timer: float = 0.0
 
-# ── PowerUp charge state (one-time death evade) ───────────────
-var has_code_charge: bool = false
-var has_cpu_charge: bool = false
 signal powerup_changed(type: String, active: bool)
 
 # Get gravity from project settings
@@ -331,17 +328,15 @@ func die(cause: String = "") -> void:
 	# Notify game manager with cause
 	GameManager.on_player_death(cause)
 
+var _cause_to_powerup := {"bug": "code", "server": "cpu"}
+
 ## Take damage from hazard. Returns true if player survived (consumed a charge).
 func take_damage(cause: String = "bug") -> bool:
 	if is_dead:
 		return false
-	if cause == "bug" and has_code_charge:
-		has_code_charge = false
-		emit_signal("powerup_changed", "code", false)
-		return true
-	if cause == "server" and has_cpu_charge:
-		has_cpu_charge = false
-		emit_signal("powerup_changed", "cpu", false)
+	var powerup_type: String = _cause_to_powerup.get(cause, "")
+	if powerup_type != "" and GameManager.ConsumeStack(powerup_type):
+		emit_signal("powerup_changed", powerup_type, GameManager.GetStackCount(powerup_type) > 0)
 		return true
 	die(cause)
 	return false
@@ -352,14 +347,10 @@ signal video_key_collected
 ## Called by PowerUp.gd when the player touches a collectible
 func apply_powerup(type: String, _duration: float) -> void:
 	match type:
-		"code":
+		"code", "cpu":
 			SFXManager.play("correct-game-show-alert-499485")
-			has_code_charge = true
-			emit_signal("powerup_changed", "code", true)
-		"cpu":
-			SFXManager.play("correct-game-show-alert-499485")
-			has_cpu_charge = true
-			emit_signal("powerup_changed", "cpu", true)
+			GameManager.AddStack(type)
+			emit_signal("powerup_changed", type, GameManager.GetStackCount(type) > 0)
 		"key":
 			SFXManager.play("correct-game-show-alert-499485")
 			GameManager.keys_collected += 1

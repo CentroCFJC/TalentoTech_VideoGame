@@ -33,18 +33,14 @@ var _gameover_timer: Timer = null
 var _mono_font: SystemFont
 
 # Progress panel row values
+var _progress_title_label: Label = null
 var _progress_score_value: Label = null
 var _progress_best_value: Label = null
 var _progress_bugs_value: Label = null
 var _progress_servers_value: Label = null
 
-# SkillUp rows
-var _skillup_code_icon: TextureRect = null
-var _skillup_code_name: Label = null
-var _skillup_code_bar: ColorRect = null
-var _skillup_cpu_icon: TextureRect = null
-var _skillup_cpu_name: Label = null
-var _skillup_cpu_bar: ColorRect = null
+# SkillUp rows — maps powerup type → SkillUpRowData
+var _skillup_rows: Dictionary = {}
 
 # Key progress panel
 const KEY_SLOT_COUNT: int = 6
@@ -107,11 +103,11 @@ class StatRow:
 	var row: HBoxContainer
 	var value_label: Label
 
-class SkillUpRow:
-	var row: VBoxContainer
-	var icon: TextureRect
-	var name_label: Label
-	var bar: ColorRect
+class SkillUpRowData:
+	var label: Label
+	var slot_container: HBoxContainer
+	var slots: Array[TextureRect]
+	var icon_path: String
 
 func _ready() -> void:
 	_setup_mono_font()
@@ -122,6 +118,7 @@ func _ready() -> void:
 	GameManager.keys_changed.connect(_on_keys_changed)
 	GameManager.bugs_eliminated_changed.connect(set_bugs_eliminated)
 	GameManager.servers_secured_changed.connect(set_servers_secured)
+	GameManager.max_stacks_changed.connect(_on_max_stacks_changed)
 
 	_setup_progress_panel()
 	_setup_key_panel()
@@ -212,11 +209,15 @@ func _show_playing_hud() -> void:
 	_stop_title_breath()
 	if _progress_panel:
 		_progress_panel.show()
+		if _progress_title_label:
+			_progress_title_label.text = "PROGRESO DE LA PARTIDA"
 	if _key_panel:
 		_key_panel.show()
 		update_key_panel()
 	if _skillup_panel:
 		_skillup_panel.show()
+		for type in GameManager.POWERUP_TYPES:
+			_update_skill_row(type)
 	if _logo_panel:
 		_logo_panel.show()
 	if _video_panel:
@@ -239,7 +240,9 @@ func _show_game_over() -> void:
 	title_panel.visible = false
 	gameover_panel.visible = true
 	if _progress_panel:
-		_progress_panel.hide()
+		_progress_panel.show()
+		if _progress_title_label:
+			_progress_title_label.text = "RESULTADO DE LA PARTIDA"
 	if _key_panel:
 		_key_panel.hide()
 	if _skillup_panel:
@@ -390,7 +393,8 @@ func _setup_progress_panel() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	_progress_panel.add_child(vbox)
 
-	vbox.add_child(_create_title_label("PROGRESO DE LA PARTIDA"))
+	_progress_title_label = _create_title_label("PROGRESO DE LA PARTIDA")
+	vbox.add_child(_progress_title_label)
 
 	var sep := HSeparator.new()
 	sep.add_theme_color_override("color", Color(0.35, 0.60, 0.95, 0.5))
@@ -516,6 +520,14 @@ func _on_keys_changed(_count: int) -> void:
 
 # ── SkillUp panel — top-right ─────────────────────────────────
 
+func _get_skill_data_for_type(type: String) -> Dictionary:
+	match type:
+		"code":
+			return {"name": "PROGRAMACIÓN", "icon_path": ICON_CODE, "accent": Color(0.2, 0.85, 0.5)}
+		"cpu":
+			return {"name": "CIBERSEGURIDAD", "icon_path": ICON_CPU, "accent": Color(0.7, 0.45, 1.0)}
+	return {}
+
 func _setup_skillup_panel() -> void:
 	_skillup_panel = $PowerUpPanel
 	if not _skillup_panel:
@@ -524,9 +536,11 @@ func _setup_skillup_panel() -> void:
 	for child in _skillup_panel.get_children():
 		child.queue_free()
 
+	_skillup_rows.clear()
+
 	_skillup_panel.add_theme_stylebox_override("panel", _create_hud_panel_style())
 	_skillup_panel.anchors_preset = Control.PRESET_TOP_RIGHT
-	_skillup_panel.offset_left  = -240
+	_skillup_panel.offset_left  = -310
 	_skillup_panel.offset_top   = 10
 	_skillup_panel.offset_right = -10
 	_skillup_panel.offset_bottom = 150
@@ -543,99 +557,78 @@ func _setup_skillup_panel() -> void:
 	sep.add_theme_color_override("color", Color(0.35, 0.60, 0.95, 0.5))
 	vbox.add_child(sep)
 
-	var code_row := _create_skillup_row("PROGRAMACIÓN", ICON_CODE, Color(0.2, 0.85, 0.5))
-	_skillup_code_icon = code_row.icon
-	_skillup_code_name = code_row.name_label
-	_skillup_code_bar = code_row.bar
-	vbox.add_child(code_row.row)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(grid)
 
-	var cpu_row := _create_skillup_row("CIBERSEGURIDAD", ICON_CPU, Color(0.7, 0.45, 1.0))
-	_skillup_cpu_icon = cpu_row.icon
-	_skillup_cpu_name = cpu_row.name_label
-	_skillup_cpu_bar = cpu_row.bar
-	vbox.add_child(cpu_row.row)
+	for type in GameManager.POWERUP_TYPES:
+		var skill_data: Dictionary = _get_skill_data_for_type(type)
+		if skill_data.is_empty():
+			continue
 
-func _create_skillup_row(name_text: String, icon_path: String, accent: Color) -> SkillUpRow:
-	var row := VBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
+		var label := Label.new()
+		_apply_mono(label)
+		label.text = skill_data.name
+		label.add_theme_font_size_override("font_size", 14)
+		label.add_theme_color_override("font_color", Color(0.25, 0.25, 0.3, 1.0))
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(label)
 
-	var header := HBoxContainer.new()
-	header.add_theme_constant_override("separation", 10)
-	header.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(header)
+		var slot_container := HBoxContainer.new()
+		slot_container.add_theme_constant_override("separation", 8)
+		slot_container.alignment = BoxContainer.ALIGNMENT_CENTER
+		slot_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(slot_container)
 
-	var icon := _create_icon_texture(icon_path, Vector2(32, 32), Color(0.08, 0.08, 0.1))
-	header.add_child(icon)
+		var slots: Array[TextureRect] = []
+		var max_stacks := GameManager.max_stacks_per_powerup
+		var slot_size := Vector2(36, 36)
+		for i in range(max_stacks):
+			var slot := TextureRect.new()
+			slot.custom_minimum_size = slot_size
+			slot.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			slot.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			slot.modulate = Color(0.08, 0.08, 0.1, 1.0)
+			if ResourceLoader.exists(skill_data.icon_path):
+				slot.texture = load(skill_data.icon_path)
+			slot_container.add_child(slot)
+			slots.append(slot)
 
-	var name_label := Label.new()
-	_apply_mono(name_label)
-	name_label.text = name_text
-	name_label.add_theme_font_size_override("font_size", 16)
-	name_label.add_theme_color_override("font_color", Color(0.92, 0.95, 1.0, 1.0))
-	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	header.add_child(name_label)
+		var row_data := SkillUpRowData.new()
+		row_data.label = label
+		row_data.slot_container = slot_container
+		row_data.slots = slots
+		row_data.icon_path = skill_data.icon_path
+		_skillup_rows[type] = row_data
+		_update_skill_row(type)
 
-	var bar_container := Control.new()
-	bar_container.custom_minimum_size = Vector2(0, 4)
-	bar_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(bar_container)
 
-	var bar_bg := ColorRect.new()
-	bar_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bar_bg.color = Color(0.15, 0.18, 0.28, 1.0)
-	bar_container.add_child(bar_bg)
+func _update_skill_row(type: String) -> void:
+	if not _skillup_rows.has(type):
+		return
+	var data: SkillUpRowData = _skillup_rows[type]
+	var count := GameManager.GetStackCount(type)
+	var max_stacks := GameManager.max_stacks_per_powerup
 
-	var bar := ColorRect.new()
-	bar.name = "SkillUpBarFill"
-	bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	bar.color = accent.darkened(0.7)
-	bar.modulate.a = 0.35
-	bar_container.add_child(bar)
+	for i in range(max_stacks):
+		if i < count:
+			data.slots[i].modulate = Color.WHITE
+		else:
+			data.slots[i].modulate = Color(0.08, 0.08, 0.1, 1.0)
 
-	var result := SkillUpRow.new()
-	result.row = row
-	result.icon = icon
-	result.name_label = name_label
-	result.bar = bar
-	return result
+	if count > 0:
+		data.label.add_theme_color_override("font_color", Color(0.92, 0.95, 1.0, 1.0))
+	else:
+		data.label.add_theme_color_override("font_color", Color(0.25, 0.25, 0.3, 1.0))
 
 func _on_powerup_changed(type: String, active: bool) -> void:
-	var icon: TextureRect
-	var name_label: Label
-	var bar: ColorRect
-	var accent: Color
-	match type:
-		"code":
-			icon = _skillup_code_icon
-			name_label = _skillup_code_name
-			bar = _skillup_code_bar
-			accent = Color(0.2, 0.85, 0.5)
-		"cpu":
-			icon = _skillup_cpu_icon
-			name_label = _skillup_cpu_name
-			bar = _skillup_cpu_bar
-			accent = Color(0.7, 0.45, 1.0)
-		_:
-			return
+	_update_skill_row(type)
 
-	if active:
-		if icon:
-			icon.modulate = Color.WHITE
-		if name_label:
-			name_label.add_theme_color_override("font_color", Color(0.92, 0.95, 1.0, 1.0))
-		if bar:
-			bar.color = accent
-			bar.modulate.a = 1.0
-	else:
-		if icon:
-			icon.modulate = Color(0.08, 0.08, 0.1, 1.0)
-		if name_label:
-			name_label.add_theme_color_override("font_color", Color(0.25, 0.25, 0.3, 1.0))
-		if bar:
-			bar.color = accent.darkened(0.7)
-			bar.modulate.a = 0.35
+func _on_max_stacks_changed(value: int) -> void:
+	_setup_skillup_panel()
 
 # ── Logo — bottom-left ────────────────────────────────────────
 

@@ -8,6 +8,7 @@ signal score_changed(score: int)
 signal keys_changed(count: int)
 signal bugs_eliminated_changed(count: int)
 signal servers_secured_changed(count: int)
+signal max_stacks_changed(value: int)
 
 # Game states
 enum State { TITLE, PLAYING, DEAD, GAME_OVER }
@@ -31,6 +32,11 @@ var bg_series: int = 3
 var bugs_eliminated: int = 0
 var servers_secured: int = 0
 
+# Power-up stack system
+const POWERUP_TYPES := ["code", "cpu"]
+var max_stacks_per_powerup: int = 3
+var _powerup_stacks: Dictionary = {}
+
 # High score file path
 const SAVE_PATH: String = "user://highscore.save"
 # Delay entre el SFX de inicio y la transicion a PLAYING (segundos)
@@ -41,6 +47,11 @@ var _is_transitioning: bool = false
 func _ready() -> void:
 	current_state = State.TITLE
 	_load_best_score()
+	_init_powerup_stacks()
+
+func _init_powerup_stacks() -> void:
+	for type in POWERUP_TYPES:
+		_powerup_stacks[type] = 0
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("jump"):
@@ -68,6 +79,7 @@ func start_game() -> void:
 	keys_collected = 0
 	bugs_eliminated = 0
 	servers_secured = 0
+	ResetAllStacks()
 	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
 	bugs_eliminated_changed.emit(bugs_eliminated)
@@ -136,6 +148,7 @@ func restart_game() -> void:
 	keys_collected = 0
 	bugs_eliminated = 0
 	servers_secured = 0
+	ResetAllStacks()
 	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
 	bugs_eliminated_changed.emit(bugs_eliminated)
@@ -157,6 +170,33 @@ func add_server_secured() -> void:
 		return
 	servers_secured += 1
 	servers_secured_changed.emit(servers_secured)
+
+# ── Power-Up Stack System ──────────────────────────────────────
+
+func AddStack(type: String) -> void:
+	if not _powerup_stacks.has(type):
+		return
+	if _powerup_stacks[type] < max_stacks_per_powerup:
+		_powerup_stacks[type] += 1
+
+func ConsumeStack(type: String) -> bool:
+	if not _powerup_stacks.has(type):
+		return false
+	if _powerup_stacks[type] > 0:
+		_powerup_stacks[type] -= 1
+		return true
+	return false
+
+func GetStackCount(type: String) -> int:
+	return _powerup_stacks.get(type, 0)
+
+func ResetAllStacks() -> void:
+	for type in POWERUP_TYPES:
+		_powerup_stacks[type] = 0
+
+func SetMaxStacks(value: int) -> void:
+	max_stacks_per_powerup = max(value, 1)
+	max_stacks_changed.emit(max_stacks_per_powerup)
 
 ## Save best score to file
 func _save_best_score() -> void:
