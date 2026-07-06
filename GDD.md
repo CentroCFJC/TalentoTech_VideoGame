@@ -155,6 +155,21 @@ Implementado en `PowerUp.gd` y gestionado por `PlatformSpawner.gd`.
 *   Espaciado mínimo: `2500` puntos entre llaves.
 *   Primera llave: alrededor de `600` puntos.
 
+### 7.4 Sistema de cargas (stacks)
+
+Cada habilidad (`code` y `cpu`) puede acumular hasta **3 cargas** (`GameManager.max_stacks_per_powerup`). Al recoger un power-up del mismo tipo se incrementa el contador; al chocar con un obstáculo que la habilidad contrarresta se consume una carga.
+
+### 7.5 Aros de habilidad (Skill Rings)
+
+Implementados en `SkillRing.gd` y `SkillRingManager.gd`.
+
+*   Cada habilidad activa muestra un aro sprite desde `assets/barreras/`:
+    *   **Programación**: `green-1.png`, `green-2.png`, `green-3.png` (según nivel de carga).
+    *   **Ciberseguridad**: `blue-1.png`, `blue-2.png`, `blue-3.png` (según nivel de carga).
+*   Cada aro se divide en mitad superior (renderizada detrás del personaje, `z_index = -1`) y mitad inferior (delante, `z_index = +1`).
+*   El centrado horizontal se calcula por nivel de carga para compensar diferencias en los PNG. El centrado vertical usa como referencia el nivel 1 para mantener consistencia entre niveles.
+*   La escala se ajusta con `sprite_scale` (valor actual: `0.165`).
+
 ---
 
 ## 8. Sistema de Videos / Campistas

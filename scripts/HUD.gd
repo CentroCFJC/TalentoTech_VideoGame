@@ -624,7 +624,7 @@ func _update_skill_row(type: String) -> void:
 	else:
 		data.label.add_theme_color_override("font_color", Color(0.25, 0.25, 0.3, 1.0))
 
-func _on_powerup_changed(type: String, active: bool) -> void:
+func _on_powerup_changed(type: String, _stacks: int) -> void:
 	_update_skill_row(type)
 
 func _on_max_stacks_changed(value: int) -> void:

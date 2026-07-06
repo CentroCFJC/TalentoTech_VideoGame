@@ -32,13 +32,22 @@ Un videojuego estilo plataforma de tipo **Infinite Runner procedural** desarroll
 
 Los power-ups se generan en patrones de obstáculos y en tutoriales.
 
-| Power-Up | Tipo | Efecto |
-|----------|------|--------|
-| **SkillUp: Programación** | `code` | Carga única que elimina un bug al chocar con él y suma a "Bugs eliminados". |
-| **SkillUp: Ciberseguridad** | `cpu` | Carga única que neutraliza un servidor al chocar con él y suma a "Servidores asegurados". |
-| **Llave de Video** | `key` | Recolecta una de las 6 llaves de la sesión y reproduce un video testimonial. |
+| Power-Up | Tipo | Efecto | Máx. cargas |
+|----------|------|--------|-------------|
+| **SkillUp: Programación** | `code` | Carga única que elimina un bug al chocar con él y suma a "Bugs eliminados". | 3 |
+| **SkillUp: Ciberseguridad** | `cpu` | Carga única que neutraliza un servidor al chocar con él y suma a "Servidores asegurados". | 3 |
+| **Llave de Video** | `key` | Recolecta una de las 6 llaves de la sesión y reproduce un video testimonial. | — |
 
 El HUD muestra el progreso de habilidades en la esquina superior derecha y las llaves recolectadas en la parte superior central.
+
+### Aros de habilidad
+
+Cada habilidad activa muestra un aro alrededor del personaje usando sprites de `assets/barreras/`:
+
+*   **Programación**: aro verde (green-1, green-2, green-3 según el nivel de carga).
+*   **Ciberseguridad**: aro azul (blue-1, blue-2, blue-3 según el nivel de carga).
+*   Cada aro se divide en mitad superior (detrás del personaje) y mitad inferior (delante), creando profundidad.
+*   Los sprites se auto-centran horizontalmente por nivel para compensar diferencias en los PNG.
 
 ---
 

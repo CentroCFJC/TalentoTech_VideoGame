@@ -34,7 +34,7 @@ var start_x: float = 0.0
 var jumps_remaining: int = MAX_JUMPS
 var _jump_lockout_timer: float = 0.0
 
-signal powerup_changed(type: String, active: bool)
+signal powerup_changed(type: String, stacks: int)
 
 # Get gravity from project settings
 var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
@@ -43,6 +43,7 @@ var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
 @onready var jump_sfx: AudioStreamPlayer2D = $JumpSFX
 @onready var double_jump_sfx: AudioStreamPlayer2D = $DoubleJumpSFX
+@onready var skill_ring_manager: Node2D = $SkillRingManager
 
 func _ready() -> void:
 	add_to_group("player")
@@ -91,6 +92,7 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			if sprite:
 				sprite.modulate = Color.WHITE
 				sprite.play("run")
+			_update_skill_rings()
 			set_physics_process(true)
 		GameManager.State.TITLE:
 			set_physics_process(false)
@@ -99,16 +101,29 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			set_physics_process(false)
 			visible = false
 
-# ── DEBUG: Simula la obtención de una key con la tecla V ─────
-# Eliminar este bloque antes de la versión final.
+# ── DEBUG: Simula powerups con teclas ─────
 func _unhandled_input(event: InputEvent) -> void:
-	if not (event is InputEventKey and event.keycode == KEY_V and event.pressed and not event.echo):
+	if not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	if GameManager.current_state != GameManager.State.PLAYING:
 		return
-	if GameManager.keys_collected >= 6:
-		return
-	apply_powerup("key", 0.0)
+
+	match event.keycode:
+		KEY_V:
+			if GameManager.keys_collected >= 6:
+				return
+			apply_powerup("key", 0.0)
+		KEY_P:
+			var code_stacks := GameManager.GetStackCount("code")
+			var cpu_stacks := GameManager.GetStackCount("cpu")
+			if code_stacks >= GameManager.max_stacks_per_powerup and cpu_stacks >= GameManager.max_stacks_per_powerup:
+				GameManager.ResetAllStacks()
+			else:
+				GameManager.AddStack("code")
+				GameManager.AddStack("cpu")
+			_update_skill_rings()
+			emit_signal("powerup_changed", "code", GameManager.GetStackCount("code"))
+			emit_signal("powerup_changed", "cpu", GameManager.GetStackCount("cpu"))
 # ── END DEBUG ──
 
 func _process(delta: float) -> void:
@@ -310,6 +325,7 @@ func die(cause: String = "") -> void:
 	if is_dead:
 		return
 	is_dead = true
+	_clear_skill_rings()
 	if cause == "fall":
 		GameManager.on_player_death(cause)
 		return
@@ -336,7 +352,9 @@ func take_damage(cause: String = "bug") -> bool:
 		return false
 	var powerup_type: String = _cause_to_powerup.get(cause, "")
 	if powerup_type != "" and GameManager.ConsumeStack(powerup_type):
-		emit_signal("powerup_changed", powerup_type, GameManager.GetStackCount(powerup_type) > 0)
+		var stacks := GameManager.GetStackCount(powerup_type)
+		emit_signal("powerup_changed", powerup_type, stacks)
+		_update_skill_rings()
 		return true
 	die(cause)
 	return false
@@ -350,9 +368,21 @@ func apply_powerup(type: String, _duration: float) -> void:
 		"code", "cpu":
 			SFXManager.play("correct-game-show-alert-499485")
 			GameManager.AddStack(type)
-			emit_signal("powerup_changed", type, GameManager.GetStackCount(type) > 0)
+			var stacks := GameManager.GetStackCount(type)
+			emit_signal("powerup_changed", type, stacks)
+			_update_skill_rings()
 		"key":
 			SFXManager.play("correct-game-show-alert-499485")
 			GameManager.keys_collected += 1
 			GameManager.keys_changed.emit(GameManager.keys_collected)
 			emit_signal("video_key_collected")
+
+func _update_skill_rings() -> void:
+	if skill_ring_manager and is_instance_valid(skill_ring_manager):
+		skill_ring_manager.set_code_stacks(GameManager.GetStackCount("code"))
+		skill_ring_manager.set_cpu_stacks(GameManager.GetStackCount("cpu"))
+
+func _clear_skill_rings() -> void:
+	if skill_ring_manager and is_instance_valid(skill_ring_manager):
+		skill_ring_manager.set_code_stacks(0)
+		skill_ring_manager.set_cpu_stacks(0)
