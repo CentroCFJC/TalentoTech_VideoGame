@@ -48,6 +48,7 @@ func _ready() -> void:
 	current_state = State.TITLE
 	_load_best_score()
 	_init_powerup_stacks()
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 
 func _init_powerup_stacks() -> void:
 	for type in POWERUP_TYPES:
@@ -80,6 +81,10 @@ func start_game() -> void:
 	bugs_eliminated = 0
 	servers_secured = 0
 	ResetAllStacks()
+	# Reinicia la configuracion de dificultad para esta nueva partida; el
+	# selector de dificultad volvera a aparecer una unica vez al inicio.
+	if DifficultyManager:
+		DifficultyManager.reset()
 	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
 	bugs_eliminated_changed.emit(bugs_eliminated)
@@ -149,6 +154,8 @@ func restart_game() -> void:
 	bugs_eliminated = 0
 	servers_secured = 0
 	ResetAllStacks()
+	if DifficultyManager:
+		DifficultyManager.reset()
 	keys_changed.emit(keys_collected)
 	score_changed.emit(score)
 	bugs_eliminated_changed.emit(bugs_eliminated)

@@ -18,12 +18,13 @@ config/features=PackedStringArray("4.7", "Mobile")
 
 GameManager="*res://scripts/GameManager.gd"
 SFXManager="*res://scripts/SFXManager.gd"
+DifficultyManager="*res://scripts/DifficultyManager.gd"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-window/size/mode=4
+window/size/mode=3
 window/size/resizable=false
 window/stretch/mode="canvas_items"
 

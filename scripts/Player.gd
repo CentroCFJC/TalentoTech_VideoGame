@@ -3,9 +3,14 @@ extends CharacterBody2D
 ## Player controller — auto-run infinite runner. Only action: jump with spacebar.
 
 # Movement constants
+# La velocidad del auto-run es controlada por DifficultyManager: una velocidad
+# unica por sesion que se mantiene constante (sin incremento por distancia).
+# AUTO_RUN_SPEED solo se usa como fallback si DifficultyManager no existe.
 const AUTO_RUN_SPEED: float = 300.0
-const SPEED_INCREMENT: float = 5.0        # +5 px/s per 500m
-const MAX_SPEED: float = 500.0
+# Velocidad a la que current_speed acelera hacia la velocidad target tras
+# cruzar el selector de dificultad (en px/s por segundo). Un valor bajo da una
+# aceleracion suave y perceptible.
+const SPEED_ACCELERATION: float = 900.0
 const JUMP_VELOCITY: float = -520.0
 const COYOTE_TIME: float = 0.12
 const JUMP_BUFFER_TIME: float = 0.1
@@ -69,7 +74,6 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			is_falling_out = false
 			fall_timeout = 0.0
 			jumps_remaining = MAX_JUMPS
-			current_speed = AUTO_RUN_SPEED
 			jump_buffer_timer = 0.0
 			coyote_timer = 0.0
 			_jump_lockout_timer = 0.15
@@ -77,6 +81,10 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			# Restaurar posicion inicial y distancia de referencia
 			global_position = Vector2(100, 440)
 			start_x = global_position.x
+			# Velocidad inicial: la velocidad pre-selector bajita. Al cruzar el
+			# selector de dificultad, current_speed acelerara suavemente hacia
+			# la velocidad unica de la dificultad elegida.
+			current_speed = DifficultyManager.get_speed() if DifficultyManager else AUTO_RUN_SPEED
 			# Resetear colisiones
 			collision_layer = 1
 			collision_mask = 2 | 16  # Environment + Hazards
@@ -265,9 +273,21 @@ func _physics_process(delta: float) -> void:
 			die("fall")
 		return
 
-	# --- Progressive speed ---
-	var distance_traveled: float = global_position.x - start_x
-	current_speed = min(AUTO_RUN_SPEED + (distance_traveled / 500.0) * SPEED_INCREMENT, MAX_SPEED)
+	# --- Target speed (constante por sesion segun dificultad) ---
+	# No hay incremento progresivo por distancia: la velocidad target viene de
+	# DifficultyManager y se mantiene constante toda la sesion. Antes de cruzar
+	# el selector la target es la velocidad pre-selector bajita; al cruzar la
+	# barrera, DifficultyManager actualiza la target y current_speed acelera
+	# suavemente hacia ella.
+	var target_speed: float = DifficultyManager.get_speed() if DifficultyManager else AUTO_RUN_SPEED
+	var diff: float = target_speed - current_speed
+	if absf(diff) > 0.01:
+		# Acelera (o decelera) hacia la velocidad target a ritmo constante.
+		var step: float = SPEED_ACCELERATION * delta
+		if absf(diff) <= step:
+			current_speed = target_speed
+		else:
+			current_speed += signf(diff) * step
 
 	# --- Gravity ---
 	if not is_on_floor():

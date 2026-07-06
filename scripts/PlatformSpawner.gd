@@ -36,7 +36,8 @@ enum Pattern {
 	OBSTACLE_CORRIDOR,
 	OBSTACLE_GAP_COMBO,
 	MULTI_OBSTACLE_FIELD,
-	KEY_EASY
+	KEY_EASY,
+	DIFFICULTY_SELECTOR
 }
 
 # Key pattern — easy section, distributed across the session
@@ -45,9 +46,14 @@ const MIN_KEY_SCORE_SPACING: int = 2500
 var _next_key_score: int = 600
 var _key_chunks_remaining: int = 0
 
-# Progression: cybersecurity / servers chunk unlocks after first key
+# Progression: enemy and tutorial unlocks tied to collected keys.
+# - Before 1st key: only platforms.
+# - After 1st key: bugs unlocked + code/bugs tutorial queued.
+# - After 2nd key: servers unlocked + CPU/cybersecurity tutorial queued.
+var _bugs_unlocked: bool = false
+var _servers_unlocked: bool = false
+var _queue_code_tutorial: bool = false
 var _queue_cpu_tutorial: bool = false
-var _cyber_enemies_unlocked: bool = false
 
 # Server settings
 const SERVER_WIDTH: float = 48.0
@@ -60,6 +66,19 @@ var active_chunks: Array[Node2D] = []
 var camera: Camera2D = null
 var rng := RandomNumberGenerator.new()
 var last_server_spawn_x: float = -2000.0
+
+# Difficulty selector: aparece una unica vez al inicio de cada partida, justo
+# despues de los tutoriales (chunk 4). Se resetea con cada PLAYING.
+var _difficulty_selector_spawned: bool = false
+
+# Distintos colores para resaltar visualmente cada zona de la barrera.
+# Los textos descriptivos y acabado visual se definen en una tarea posterior;
+# por ahora solo se diferencian las 3 zonas por color.
+const DIFFICULTY_ZONE_COLORS: Array[Color] = [
+	Color(0.20, 0.90, 0.45, 0.32),  # Nivel 1 — verde
+	Color(1.00, 0.85, 0.25, 0.32),  # Nivel 2 — amarillo
+	Color(1.00, 0.35, 0.40, 0.32),  # Nivel 3 — rojo
+]
 
 var _mono_font: SystemFont
 
@@ -88,12 +107,16 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 		GameManager.State.PLAYING:
 			_next_key_score = 600
 			_key_chunks_remaining = 0
+			_bugs_unlocked = false
+			_servers_unlocked = false
+			_queue_code_tutorial = false
 			_queue_cpu_tutorial = false
-			_cyber_enemies_unlocked = false
 			# Reseteo completo del spawner (no se recarga la escena)
 			next_chunk_x = 0.0
 			last_platform_y = GROUND_Y
 			last_server_spawn_x = -2000.0
+			# El selector de dificultad aparece una unica vez por partida.
+			_difficulty_selector_spawned = false
 			camera = null
 			# Liberar todos los chunks existentes y empezar limpio
 			# Los bugs/servers son hijos de los chunks, asi que se liberan solos.
@@ -108,8 +131,10 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 		GameManager.State.TITLE:
 			_next_key_score = 600
 			_key_chunks_remaining = 0
+			_bugs_unlocked = false
+			_servers_unlocked = false
+			_queue_code_tutorial = false
 			_queue_cpu_tutorial = false
-			_cyber_enemies_unlocked = false
 
 func _on_score_changed(score: int) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
@@ -117,9 +142,12 @@ func _on_score_changed(score: int) -> void:
 	if score >= _next_key_score and _key_chunks_remaining == 0:
 		if GameManager.keys_collected >= MAX_KEYS_PER_SESSION:
 			return
-		# First key section of the session: queue the CPU/cybersecurity tutorial
-		# right after it, so the tutorial always follows the first key pattern.
+		# Queue the right tutorial after each key section:
+		# - 1st key -> code/bugs tutorial.
+		# - 2nd key -> CPU/servers tutorial.
 		if GameManager.keys_collected == 0:
+			_queue_code_tutorial = true
+		elif GameManager.keys_collected == 1:
 			_queue_cpu_tutorial = true
 		_key_chunks_remaining = 4
 		_next_key_score = score + MIN_KEY_SCORE_SPACING
@@ -127,9 +155,14 @@ func _on_score_changed(score: int) -> void:
 func _on_keys_changed(count: int) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
 		return
-	# First key of the session unlocks the cybersecurity / servers tutorial
-	if count == 1 and not _cyber_enemies_unlocked:
-		_queue_cpu_tutorial = true
+	# Unlock enemies right when the key is collected, so they start appearing
+	# in the procedural content that follows the key section. The corresponding
+	# tutorial is generated immediately after the key section to teach the player
+	# how to handle the newly unlocked enemy type.
+	if count == 1:
+		_bugs_unlocked = true
+	elif count == 2:
+		_servers_unlocked = true
 
 func _process(delta: float) -> void:
 	if GameManager.current_state != GameManager.State.PLAYING:
@@ -188,10 +221,10 @@ func _spawn_powerup_for_obstacle_pattern(chunk: Node2D, chunk_x: float) -> void:
 	if not powerup_scene:
 		return
 	# Don't spawn power-ups until obstacles can actually appear
-	if GameManager.score < 50:
+	if not _bugs_unlocked:
 		return
 	var p_type: String
-	if GameManager.score < 150 or not _cyber_enemies_unlocked:
+	if not _servers_unlocked:
 		p_type = "code"
 	else:
 		p_type = "code" if rng.randf() > 0.5 else "cpu"
@@ -228,10 +261,12 @@ func _generate_chunk(chunk_x: float) -> void:
 	var difficulty: int = _get_difficulty()
 	var patterns := _get_available_patterns(difficulty)
 	
-	# Chunk 0: intro flat, Chunks 1-2: movement tutorials, Chunk 3: code powerup tutorial,
-	# Chunk 4: now procedural content, Chunk 5: cooldown flat.
-	# CPU / cybersecurity tutorial is queued together with the first key section,
-	# so it is generated immediately after the four key-easy chunks end.
+	# Chunk 0: intro flat, Chunks 1-2: movement tutorials (salto/doble salto),
+	# Chunk 3: selector de dificultad.
+	# Tutorials are no longer fixed chunks; they are queued after key sections:
+	# - 1st key section -> code/bugs tutorial.
+	# - 2nd key section -> CPU/servers tutorial.
+	# CPU / cybersecurity tutorial is queued together with the second key section.
 	var pattern: Pattern
 	if chunk_x < CHUNK_WIDTH:
 		_build_flat_ground(chunk)
@@ -242,11 +277,9 @@ func _generate_chunk(chunk_x: float) -> void:
 	elif int(chunk_x / CHUNK_WIDTH) == 2:
 		_build_doublejump_tutorial(chunk)
 		return
-	elif int(chunk_x / CHUNK_WIDTH) == 3:
-		_build_code_tutorial(chunk)
-		return
-	elif int(chunk_x / CHUNK_WIDTH) == 5:
-		_build_flat_ground(chunk)
+	elif int(chunk_x / CHUNK_WIDTH) == 3 and not _difficulty_selector_spawned:
+		_build_difficulty_selector(chunk)
+		_difficulty_selector_spawned = true
 		return
 	elif _key_chunks_remaining > 0:
 		var spawn_key: bool = _key_chunks_remaining == 2
@@ -255,8 +288,11 @@ func _generate_chunk(chunk_x: float) -> void:
 		if spawn_key:
 			_spawn_key_powerup(chunk, chunk_x)
 		return
+	elif _queue_code_tutorial:
+		_queue_code_tutorial = false
+		_build_code_tutorial(chunk)
+		return
 	elif _queue_cpu_tutorial:
-		_cyber_enemies_unlocked = true
 		_queue_cpu_tutorial = false
 		_build_cpu_tutorial(chunk)
 		return
@@ -518,6 +554,71 @@ func _create_tutorial_panel(chunk: Node2D, message: String, image_path: String, 
 	bg.add_child(row)
 	chunk.add_child(bg)
 
+## Crea un pequeno circulo solido de color (sin imagen), usado para los
+## indicadores verde/amarillo/rojo del panel del selector de dificultad.
+func _make_solid_circle(color: Color, size: int) -> Panel:
+	var circle := Panel.new()
+	circle.custom_minimum_size = Vector2(size, size)
+	var style := StyleBoxFlat.new()
+	style.bg_color        = color
+	style.border_color    = Color(1, 1, 1, 0.65)
+	style.set_border_width_all(2)
+	var r: int = size / 2
+	style.corner_radius_top_left     = r
+	style.corner_radius_top_right    = r
+	style.corner_radius_bottom_left  = r
+	style.corner_radius_bottom_right = r
+	style.anti_aliasing = true
+	circle.add_theme_stylebox_override("panel", style)
+	return circle
+
+## Panel de aviso previo al selector de dificultad: muestra el texto del
+## mensaje seguido de tres pequenos circulos (verde, amarillo, rojo) que
+## representan las tres zonas de la barrera. Mismo estilo visual que los
+## paneles de los tutoriales anteriores.
+func _create_difficulty_intro_panel(chunk: Node2D, message: String, pos: Vector2) -> void:
+	var bg := PanelContainer.new()
+	bg.position = pos
+
+	var bg_style := StyleBoxFlat.new()
+	bg_style.bg_color = Color(0, 0, 0, 0.55)
+	bg_style.content_margin_left = 10
+	bg_style.content_margin_right = 10
+	bg_style.content_margin_top = 6
+	bg_style.content_margin_bottom = 6
+	bg_style.corner_radius_top_left = 8
+	bg_style.corner_radius_top_right = 8
+	bg_style.corner_radius_bottom_left = 8
+	bg_style.corner_radius_bottom_right = 8
+	bg_style.anti_aliasing = true
+	bg.add_theme_stylebox_override("panel", bg_style)
+
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+
+	var label := Label.new()
+	label.add_theme_font_override("font", _mono_font)
+	label.text = message
+	label.add_theme_font_size_override("font_size", 26)
+	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+
+	# Tres pequenos circulos verde / amarillo / rojo (mismo color base de las
+	# zonas de la barrera, pero solidos).
+	var dots := HBoxContainer.new()
+	dots.alignment = BoxContainer.ALIGNMENT_CENTER
+	dots.add_theme_constant_override("separation", 8)
+	const DOT_SIZE := 22
+	dots.add_child(_make_solid_circle(DIFFICULTY_ZONE_COLORS[0], DOT_SIZE))
+	dots.add_child(_make_solid_circle(DIFFICULTY_ZONE_COLORS[1], DOT_SIZE))
+	dots.add_child(_make_solid_circle(DIFFICULTY_ZONE_COLORS[2], DOT_SIZE))
+	row.add_child(dots)
+
+	bg.add_child(row)
+	chunk.add_child(bg)
+
 func _build_ground_gap(chunk: Node2D, large: bool) -> void:
 	var gap_size: float = MIN_GAP_WIDTH if not large else rng.randf_range(150.0, MAX_GAP_WIDTH)
 	var gap_start: float = rng.randf_range(200.0, CHUNK_WIDTH - gap_size - 200.0)
@@ -630,6 +731,146 @@ func _spawn_key_powerup(chunk: Node2D, _chunk_x: float) -> void:
 	pu.position = Vector2(CHUNK_WIDTH * 0.5, last_platform_y - PLATFORM_HEIGHT * 0.5 - 60.0)
 	chunk.add_child(pu)
 
+# ── Difficulty Selector Pattern ─────────────────────────────────
+
+## Patron DIFFICULTY_SELECTOR — barrera vertical luminosa dividida en tres
+## zonas horizontales (Nivel 1 abajo, Nivel 2 medio, Nivel 3 arriba).
+## El jugador la atraviesa saltando; la altura a la que cruza determina la
+## dificultad. Se completa automaticamente tras la seleccion y la barrera
+## queda en el escenario como cualquier otro elemento, sin desaparecer ni
+## convertirse en menu.
+func _build_difficulty_selector(chunk: Node2D) -> void:
+	# Suelo plano y estable para que el jugador pueda aterrizar tras cruzar.
+	last_platform_y = GROUND_Y
+	_create_platform(chunk, 0, GROUND_Y, CHUNK_WIDTH)
+
+	# Panel de aviso "Elige la dificultad" antes de la barrera, con el mismo
+	# estilo visual que los paneles de los tutoriales anteriores, pero con
+	# tres pequenos circulos verde/amarillo/rojo en lugar del icono.
+	_create_difficulty_intro_panel(
+		chunk,
+		"Elige la dificultad",
+		Vector2(80.0, last_platform_y - 165)
+	)
+
+	# La barrera se desplaza hacia el final del chunk para que no se solape
+	# con el panel de aviso que aparece al inicio.
+	var barrier_x: float = CHUNK_WIDTH * 0.78
+
+	# Geometria de la barrera (en coords del chunk = coords del mundo, ya que
+	# el chunk esta posicionado en y=0).
+	var ground_surface: float = GROUND_Y - PLATFORM_HEIGHT * 0.5  # 490
+	var barrier_thickness: float = 48.0
+	var zone_height: float = 90.0
+	# La barrera cubre desde y=200 (encima de zona 3) hasta y=495 (liga con suelo).
+	var barrier_top_y: float = ground_surface - 3.0 * zone_height  # 220
+
+	# Raiz para agrupar los visuales y el area de deteccion de la barrera.
+	var barrier := Node2D.new()
+	barrier.name = "DifficultyBarrier"
+	chunk.add_child(barrier)
+
+	# --- Visuales: tres zonas horizontales de igual tamanio ---
+	# De abajo hacia arriba: Nivel 1, Nivel 2, Nivel 3.
+	var zone_rects: Array[ColorRect] = []
+	for i in 3:
+		var zone_center_y: float = ground_surface - (i + 0.5) * zone_height
+		var rect := ColorRect.new()
+		rect.name = "Zone%d" % (i + 1)
+		rect.size = Vector2(barrier_thickness, zone_height)
+		rect.position = Vector2(barrier_x - barrier_thickness * 0.5,
+								zone_center_y - zone_height * 0.5)
+		rect.color = DIFFICULTY_ZONE_COLORS[i]
+		# z_index alto para verse por encima de las plataformas de fondo.
+		rect.z_index = 5
+		barrier.add_child(rect)
+		zone_rects.append(rect)
+
+	# Separadores finos entre zonas para delimitar visualmente los 3 niveles.
+	for i in 2:
+		var sep_y: float = ground_surface - (i + 1) * zone_height
+		var sep := ColorRect.new()
+		sep.size = Vector2(barrier_thickness, 2.0)
+		sep.position = Vector2(barrier_x - barrier_thickness * 0.5, sep_y - 1.0)
+		sep.color = Color(1, 1, 1, 0.55)
+		sep.z_index = 6
+		barrier.add_child(sep)
+
+	# Area unica que cubre toda la barrera; al cruzar se lee la altura (y) del
+	# jugador para determinar la zona. layer=0 -> no bloquea fisicamente.
+	# mask=1 -> escucha al Player (CharacterBody2D Layer 1).
+	var barrier_area := Area2D.new()
+	barrier_area.name = "DifficultyBarrierArea"
+	barrier_area.position = Vector2(barrier_x, (barrier_top_y + ground_surface) * 0.5)
+	barrier_area.collision_layer = 0
+	barrier_area.collision_mask = 1  # Player
+	barrier_area.add_to_group("__difficulty_zone__")
+	var area_shape := RectangleShape2D.new()
+	area_shape.size = Vector2(barrier_thickness, ground_surface - barrier_top_y)
+	var area_col := CollisionShape2D.new()
+	area_col.shape = area_shape
+	barrier_area.add_child(area_col)
+	# Guardamos referencias a los visuales para el highlight posterior.
+	barrier_area.set_meta("zone_rects", zone_rects)
+	barrier_area.set_meta("barrier_root", barrier)
+	barrier_area.body_entered.connect(_on_difficulty_barrier_entered.bind(barrier_area))
+	barrier_area.monitoring = true
+	barrier.add_child(barrier_area)
+
+## Handler: el jugador atraviesa la barrera. Determina el nivel segun la
+## altura a la que cruzo y notifica al DifficultyManager (sistema central),
+## que es quien aplica los parametros a los sistemas dependientes.
+func _on_difficulty_barrier_entered(body: Node2D, barrier_area: Area2D) -> void:
+	# Solo nos interesa el player. take_damage() existe en Player.
+	if not (body is CharacterBody2D and body.has_method("take_damage")):
+		return
+	# La seleccion ocurre una unica vez: si ya se bloqueo, ignorar.
+	if DifficultyManager.is_locked:
+		barrier_area.set_deferred("monitoring", false)
+		return
+
+	var ground_surface: float = GROUND_Y - PLATFORM_HEIGHT * 0.5
+	var height_above_ground: float = ground_surface - body.global_position.y
+
+	var level: int
+	if height_above_ground < 90.0:
+		level = DifficultyManager.Level.EASY    # Nivel 1 (baja)
+	elif height_above_ground < 200.0:
+		level = DifficultyManager.Level.MEDIUM  # Nivel 2 (media)
+	else:
+		level = DifficultyManager.Level.HARD    # Nivel 3 (alta)
+
+	# El sistema central aplica velocidad / stacks y dispara el evento.
+	DifficultyManager.set_difficulty(level)
+
+	# Retroalimentacion visual: resalta la zona elegida y apaga la interaccion.
+	# La barrera NO desaparece; queda como escenario mientras el jugador avanza.
+	_highlight_difficulty_zone(barrier_area, level)
+	barrier_area.set_deferred("monitoring", false)
+
+## Resalta la zona de dificultad elegida con un brillo; las otras dos zonas
+## permanecen sin cambios (permanecen translucidas).
+func _highlight_difficulty_zone(barrier_area: Area2D, level: int) -> void:
+	var zone_rects: Array = barrier_area.get_meta("zone_rects", [])
+	if zone_rects.size() < 3:
+		return
+	# level es 1,2,3 -> indice 0,1,2
+	var idx: int = clampi(level - 1, 0, 2)
+	var rect: ColorRect = zone_rects[idx]
+	if not is_instance_valid(rect):
+		return
+	var base_color: Color = DIFFICULTY_ZONE_COLORS[idx]
+	# Brillo intenso: alpha full y color saturado (efecto luminoso simple).
+	var lit_color := Color(
+		minf(base_color.r + 0.5, 1.0),
+		minf(base_color.g + 0.5, 1.0),
+		minf(base_color.b + 0.5, 1.0),
+		1.0
+	)
+	# Tween ligero: encendido rapido y mantenido (sin animaciones extra por ahora).
+	var tween := rect.create_tween()
+	tween.tween_property(rect, "color", lit_color, 0.18)
+
 # ── Node Creation Helpers ─────────────────────────────────────
 
 func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: float) -> void:
@@ -667,13 +908,14 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 	var world_x = chunk.global_position.x + local_x
 	
 	if type == "":
-		if GameManager.score < 50:
+		# Enemy availability is keyed to collected keys, not score.
+		if not _bugs_unlocked:
 			return
-		elif GameManager.score < 150:
+		if not _servers_unlocked:
+			# Only bugs available after the first key.
 			type = "bug"
-		elif GameManager.score < 400:
-			type = "server" if rng.randf() < 0.5 else "bug"
 		else:
+			# Both bugs and servers available after the second key.
 			var roll = rng.randf()
 			if roll < 0.35:
 				type = "server"
@@ -681,10 +923,6 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 				type = "bug"
 			else:
 				type = "bug_fly"
-			
-	# Cybersecurity / server enemies remain locked until the CPU tutorial is reached
-	if type == "server" and not _cyber_enemies_unlocked:
-		type = "bug"
 			
 	if type == "server":
 		if world_x - last_server_spawn_x < 1000.0:
