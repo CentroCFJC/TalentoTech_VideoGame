@@ -904,6 +904,31 @@ func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: floa
 	
 	chunk.add_child(platform)
 
+## Carga todos los frames PNG de una carpeta como una animacion loop de SpriteFrames.
+## Los frames se ordenan alfabeticamente (frame_001, frame_002, etc.).
+func _load_bug_animation(sprite_frames: SpriteFrames, anim_name: String, folder_path: String) -> void:
+	sprite_frames.add_animation(anim_name)
+	sprite_frames.set_animation_speed(anim_name, 20.0)
+	sprite_frames.set_animation_loop(anim_name, true)
+	
+	var frames: Array[String] = []
+	var dir := DirAccess.open(folder_path)
+	if dir:
+		dir.list_dir_begin()
+		var file: String = dir.get_next()
+		while file != "":
+			if file.ends_with(".png"):
+				frames.append(folder_path + file)
+			file = dir.get_next()
+		dir.list_dir_end()
+	frames.sort()
+	
+	for path in frames:
+		if ResourceLoader.exists(path):
+			var tex: Texture2D = load(path)
+			if tex:
+				sprite_frames.add_frame(anim_name, tex)
+
 func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, type: String = "") -> void:
 	var world_x = chunk.global_position.x + local_x
 	
@@ -933,9 +958,9 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 	if type == "bug":
 		var bug_area := Area2D.new()
 		
-		var bug_scale := Vector2(0.65, 0.65)
+		var bug_scale := Vector2(0.1, 0.1)
 		var bug_height: float = 65.0 * bug_scale.y
-		var bug_center_y: float = platform_surface_y - (bug_height * 0.5) + 12.0
+		var bug_center_y: float = platform_surface_y - (bug_height * 0.5) - 8.0
 		
 		bug_area.position = Vector2(local_x + OBSTACLE_OFFSET, bug_center_y)
 		bug_area.collision_layer = 16  # Hazards (Layer 5)
@@ -950,18 +975,11 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		
 		var sprite := AnimatedSprite2D.new()
 		var sprite_frames := SpriteFrames.new()
-		sprite_frames.add_animation("idle")
-		sprite_frames.set_animation_speed("idle", 8.0)
-		sprite_frames.set_animation_loop("idle", true)
-		for i in range(1, 6):
-			var path = "res://assets/bug/B%d.png" % i
-			if FileAccess.file_exists(path) or FileAccess.file_exists(path + ".import"):
-				var tex = load(path)
-				if tex:
-					sprite_frames.add_frame("idle", tex)
+		_load_bug_animation(sprite_frames, "walk", "res://assets/bug/walk/")
 		sprite.sprite_frames = sprite_frames
-		sprite.play("idle")
+		sprite.play("walk")
 		sprite.scale = bug_scale
+		sprite.z_index = 1
 		bug_area.add_child(sprite)
 		
 		bug_area.body_entered.connect(_on_spike_body_entered.bind(bug_area))
@@ -971,7 +989,7 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 	elif type == "bug_fly":
 		var fly_area := Area2D.new()
 		
-		var fly_scale := Vector2(0.65, 0.65)
+		var fly_scale := Vector2(0.1, 0.1)
 		var fly_height: float = 65.0 * fly_scale.y
 		
 		var random_height_offset = rng.randf_range(50.0, 250.0)
@@ -991,10 +1009,13 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		col.shape = shape
 		fly_area.add_child(col)
 		
-		var sprite := Sprite2D.new()
-		if ResourceLoader.exists("res://assets/bug/bug_fly.png"):
-			sprite.texture = load("res://assets/bug/bug_fly.png")
+		var sprite := AnimatedSprite2D.new()
+		var sprite_frames := SpriteFrames.new()
+		_load_bug_animation(sprite_frames, "fly", "res://assets/bug/fly/")
+		sprite.sprite_frames = sprite_frames
+		sprite.play("fly")
 		sprite.scale = fly_scale
+		sprite.z_index = 1
 		fly_area.add_child(sprite)
 		
 		fly_area.body_entered.connect(_on_spike_body_entered.bind(fly_area))
@@ -1048,7 +1069,9 @@ func _on_spike_body_entered(body: Node2D, spike: Area2D) -> void:
 			spike.collision_mask = 0
 			var tween := spike.create_tween()
 			if bug_sprite:
-				tween.tween_property(bug_sprite, "scale", Vector2(1.5, 0.1), 0.15)
+				# La animacion de aplastamiento respeta la escala actual del bug,
+				# evitando que con la nueva escala reducida se vea gigante.
+				tween.tween_property(bug_sprite, "scale", bug_sprite.scale * Vector2(1.5, 0.1), 0.15)
 				tween.tween_property(bug_sprite, "modulate:a", 0.0, 0.2)
 			tween.tween_callback(spike.queue_free)
 

@@ -62,8 +62,12 @@ var _minimize_panel: PanelContainer = null
 var _minimize_label: Label = null
 var _minimize_tween: Tween = null
 var _can_minimize_video: bool = false
-var _is_low_end_video_mode: bool = false
 var _is_pip_mode: bool = false
+var _is_low_end_video_mode: bool = false
+
+# Background transition state.
+var _background: Node = null
+var _is_transitioning: bool = false
 
 const PIP_SIZE: Vector2 = Vector2(320, 180)
 const PIP_MARGIN: Vector2 = Vector2(8, 8)
@@ -127,6 +131,7 @@ func _ready() -> void:
 	_setup_title_prompt()
 	_setup_video_panel()
 	_try_connect_player()
+	_connect_background()
 
 	process_mode = PROCESS_MODE_ALWAYS
 
@@ -172,11 +177,17 @@ func _connect_player_signal() -> void:
 		if p.has_signal("video_key_collected") and not p.video_key_collected.is_connected(_on_video_key_collected):
 			p.video_key_collected.connect(_on_video_key_collected)
 
+func _connect_background() -> void:
+	_background = get_tree().get_first_node_in_group("background")
+	if _background and _background.has_signal("background_transition_finished"):
+		if not _background.background_transition_finished.is_connected(_on_background_transition_finished):
+			_background.background_transition_finished.connect(_on_background_transition_finished)
+
 # ── Panel visibility per game state ───────────────────────────
 
 func _show_title_screen() -> void:
 	if _is_pip_mode or (_video_panel and _video_panel.visible):
-		_close_video()
+		_close_video_internal()
 
 	title_panel.visible = true
 	gameover_panel.visible = false
@@ -199,7 +210,7 @@ func _show_title_screen() -> void:
 
 func _show_playing_hud() -> void:
 	if _is_pip_mode or (_video_panel and _video_panel.visible):
-		_close_video()
+		_close_video_internal()
 
 	_watched_videos.clear()
 
@@ -869,8 +880,8 @@ func _on_video_key_collected() -> void:
 
 	get_tree().paused = true
 
-	if not _video_player.finished.is_connected(_close_video):
-		_video_player.finished.connect(_close_video)
+	if not _video_player.finished.is_connected(_on_video_finished):
+		_video_player.finished.connect(_on_video_finished)
 
 	_set_music_video_duck(true)
 
@@ -880,6 +891,8 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _enter_pip_mode() -> void:
+	if _is_transitioning:
+		return
 	_can_minimize_video = false
 	_is_pip_mode = true
 	SFXManager.play("game-collect-item-short-550419")
@@ -917,16 +930,25 @@ func _enter_pip_mode() -> void:
 	pip_tween.tween_property(_video_panel, "position", Vector2(pip_x, pip_y), 0.7)
 	pip_tween.tween_property(_video_panel, "size", PIP_SIZE, 0.7)
 
-	get_tree().paused = false
+	# The game stays paused while the PIP animation runs, then the background
+	# transition plays. Gameplay only resumes once the transition finishes.
+	pip_tween.tween_callback(func(): _play_background_transition())
 
 	if _key_panel and is_instance_valid(_key_panel):
 		_key_panel.show()
 		update_key_panel()
 
-func _close_video() -> void:
+func _on_video_finished() -> void:
+	# The video ended naturally: close it immediately so the background is
+	# visible, then play the background transition before resuming gameplay.
+	if _is_transitioning:
+		return
+	_close_video_internal()
+	_play_background_transition()
+
+func _close_video_internal() -> void:
 	_can_minimize_video = false
 	_is_pip_mode = false
-	get_tree().paused = false
 
 	var music = get_tree().get_first_node_in_group("music")
 	if music and music.has_method("fade_out_video_reduction"):
@@ -937,8 +959,8 @@ func _close_video() -> void:
 	if _video_player:
 		_video_player.stop()
 		_video_player.stream = null
-		if _video_player.finished.is_connected(_close_video):
-			_video_player.finished.disconnect(_close_video)
+		if _video_player.finished.is_connected(_on_video_finished):
+			_video_player.finished.disconnect(_on_video_finished)
 
 	if _video_panel and is_instance_valid(_video_panel):
 		_video_panel.modulate = Color.WHITE
@@ -954,6 +976,19 @@ func _close_video() -> void:
 	if _key_panel and is_instance_valid(_key_panel):
 		_key_panel.show()
 		update_key_panel()
+
+func _play_background_transition() -> void:
+	_is_transitioning = true
+	if not _background:
+		_connect_background()
+	if _background and _background.has_method("play_background_transition"):
+		_background.play_background_transition()
+	else:
+		_on_background_transition_finished()
+
+func _on_background_transition_finished() -> void:
+	_is_transitioning = false
+	get_tree().paused = false
 
 func _set_music_video_duck(active: bool) -> void:
 	var music = get_tree().get_first_node_in_group("music")
