@@ -16,8 +16,17 @@ var _sprite: Sprite2D = null
 var _textures: Array[Texture2D] = []
 var _ref_center_y: float = 0.0
 
+# Tambaleo suave y continuo para que los aros no se vean estaticos.
+const WOBBLE_AMPLITUDE: float = 2.0   # grados maximo de balanceo
+const WOBBLE_SPEED: float = 5.0       # rad/s
+var _wobble_time: float = 0.0
+var _wobble_offset: float = 0.0
+
 func _ready() -> void:
 	_load_textures()
+	# Desfase determinista por color: las dos mitades del mismo aro se mueven
+	# juntas, pero los aros de diferente color se desfasan entre si.
+	_wobble_offset = 0.0 if color_prefix == "green" else PI
 	_sprite = Sprite2D.new()
 	_sprite.centered = false
 	_sprite.scale = Vector2(sprite_scale, sprite_scale)
@@ -60,6 +69,12 @@ func _compute_reference_y() -> void:
 	if not img:
 		return
 	_ref_center_y = _content_center(img).y
+
+func _process(delta: float) -> void:
+	if not visible:
+		return
+	_wobble_time += delta
+	rotation_degrees = sin(_wobble_time * WOBBLE_SPEED + _wobble_offset) * WOBBLE_AMPLITUDE
 
 func set_stacks(value: int) -> void:
 	value = clampi(value, 0, _textures.size())
