@@ -1,0 +1,83 @@
+﻿1
+00:00:03,203 --> 00:00:08,016
+Siento que el bootcamp en sí abre muchas
+posibilidades y hay que aprovecharlas.
+
+2
+00:00:08,040 --> 00:00:10,581
+Hola, mi nombre es
+Jorge Leonardo Marín
+
+3
+00:00:10,593 --> 00:00:13,320
+soy ingeniero industrial y
+participé en el bootcamp
+
+4
+00:00:13,321 --> 00:00:15,250
+de ciberseguridad en
+la ciudad de Pereira.
+
+5
+00:00:15,262 --> 00:00:17,520
+Yo entré al bootcamp
+porque estaba muy interesado
+
+6
+00:00:17,521 --> 00:00:18,640
+en el tema de ciberseguridad. 
+
+7
+00:00:18,665 --> 00:00:22,400
+Uno entra conmiedo por lo desconocido.
+Yo pensaba que eso
+
+8
+00:00:22,401 --> 00:00:24,749
+era más tema de los
+ingenieros de sistemas.
+
+9
+00:00:24,761 --> 00:00:27,280
+Yo me di cuenta que no,
+que alguien de cualquier
+
+10
+00:00:27,281 --> 00:00:28,483
+profesión lo podía hacer. 
+
+11
+00:00:28,515 --> 00:00:31,740
+Tambien participé en la hackathon, fui motivado
+por mis profesores.
+
+12
+00:00:31,741 --> 00:00:34,448
+Lastimosamente no quedé
+entre los cinco primeros,
+
+13
+00:00:34,460 --> 00:00:37,890
+pues eso me motivó también a
+seguir desarrollando mi proyecto.
+
+14
+00:00:37,891 --> 00:00:42,040
+Entonces tuve mucho trabajo, mucha
+carga laboral. Allí se me ocurrió la idea
+
+15
+00:00:42,041 --> 00:00:44,623
+de poder crear una
+herramienta de transcripción
+
+16
+00:00:44,635 --> 00:00:47,340
+que me ayudara a manejar
+esos tiempos de trabajo.
+
+17
+00:00:47,364 --> 00:00:54,063
+Talento Tech me dio la visión para
+transformar ideas en oportunidades.
+

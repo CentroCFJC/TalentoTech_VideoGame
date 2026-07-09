@@ -19,6 +19,7 @@ config/features=PackedStringArray("4.7", "Mobile")
 GameManager="*res://scripts/GameManager.gd"
 SFXManager="*res://scripts/SFXManager.gd"
 DifficultyManager="*res://scripts/DifficultyManager.gd"
+SubtitleManager="*res://scripts/SubtitleManager.gd"
 
 [display]
 

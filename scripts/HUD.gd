@@ -189,6 +189,7 @@ func _show_title_screen() -> void:
 	if _is_pip_mode or (_video_panel and _video_panel.visible):
 		_close_video_internal()
 
+	SubtitleManager.clear_all()
 	title_panel.visible = true
 	gameover_panel.visible = false
 	if _progress_panel:
@@ -212,6 +213,7 @@ func _show_playing_hud() -> void:
 	if _is_pip_mode or (_video_panel and _video_panel.visible):
 		_close_video_internal()
 
+	SubtitleManager.clear_all()
 	_watched_videos.clear()
 
 	title_panel.visible = false
@@ -877,6 +879,7 @@ func _on_video_key_collected() -> void:
 		)
 
 		_video_player.play()
+		SubtitleManager.start_subtitles(_video_player, chosen, _video_panel)
 
 	get_tree().paused = true
 
@@ -932,7 +935,10 @@ func _enter_pip_mode() -> void:
 
 	# The game stays paused while the PIP animation runs, then the background
 	# transition plays. Gameplay only resumes once the transition finishes.
-	pip_tween.tween_callback(func(): _play_background_transition())
+	pip_tween.tween_callback(func():
+		SubtitleManager.update_mode(true)
+		_play_background_transition()
+	)
 
 	if _key_panel and is_instance_valid(_key_panel):
 		_key_panel.show()
@@ -947,6 +953,7 @@ func _on_video_finished() -> void:
 	_play_background_transition()
 
 func _close_video_internal() -> void:
+	SubtitleManager.stop_subtitles()
 	_can_minimize_video = false
 	_is_pip_mode = false
 
