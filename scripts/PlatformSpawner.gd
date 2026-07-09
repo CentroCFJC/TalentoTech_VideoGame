@@ -347,7 +347,7 @@ func _build_jump_tutorial(chunk: Node2D) -> void:
 	_create_tutorial_panel(
 		chunk,
 		"Pulsa el botón para saltar",
-		"res://assets/rocket/Jump_2.png",
+		"res://assets/rocket_v2/salto/frame_076.png",
 		Vector2(120, last_platform_y - 165)
 	)
 
@@ -366,7 +366,7 @@ func _build_doublejump_tutorial(chunk: Node2D) -> void:
 	_create_tutorial_panel(
 		chunk,
 		"Pulsa de nuevo para doble salto",
-		"res://assets/rocket/DoubleJump_3.png",
+		"res://assets/rocket_v2/doble_salto/frame_085.png",
 		Vector2(30, last_platform_y - 165)
 	)
 
@@ -379,7 +379,7 @@ func _build_code_tutorial(chunk: Node2D) -> void:
 		chunk,
 		"Programación te protege de bugs",
 		"res://assets/powerups/powerup_code.png",
-		"res://assets/bug/bug_1.png",
+		"res://assets/bug/walk/frame_017.png",
 		Vector2(30.0, last_platform_y - 165)
 	)
 
@@ -437,13 +437,13 @@ func _create_powerup_tutorial_panel(chunk: Node2D, text: String, icon1_path: Str
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
 
-	row.add_child(_make_icon_arrow_icon(icon1_path, icon2_path))
+	row.add_child(_make_icon_arrow_icon(icon1_path, icon2_path, 72))
 
 	bg.add_child(row)
 	chunk.add_child(bg)
 
 ## Creates an [Icon] → [Icon] horizontal group.
-func _make_icon_arrow_icon(icon1_path: String, icon2_path: String) -> HBoxContainer:
+func _make_icon_arrow_icon(icon1_path: String, icon2_path: String, size2: int = 44) -> HBoxContainer:
 	var hbox := HBoxContainer.new()
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	hbox.add_theme_constant_override("separation", 8)
@@ -458,7 +458,7 @@ func _make_icon_arrow_icon(icon1_path: String, icon2_path: String) -> HBoxContai
 	arrow.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hbox.add_child(arrow)
 
-	hbox.add_child(_make_circle_icon(icon2_path, 44))
+	hbox.add_child(_make_circle_icon(icon2_path, size2))
 	return hbox
 
 ## Creates a circular icon panel.
@@ -935,9 +935,9 @@ func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: floa
 
 ## Carga todos los frames PNG de una carpeta como una animacion loop de SpriteFrames.
 ## Los frames se ordenan alfabeticamente (frame_001, frame_002, etc.).
-func _load_bug_animation(sprite_frames: SpriteFrames, anim_name: String, folder_path: String) -> void:
+func _load_bug_animation(sprite_frames: SpriteFrames, anim_name: String, folder_path: String, target_count: int = 0) -> void:
 	sprite_frames.add_animation(anim_name)
-	sprite_frames.set_animation_speed(anim_name, 20.0)
+	sprite_frames.set_animation_speed(anim_name, 10.0)
 	sprite_frames.set_animation_loop(anim_name, true)
 	
 	var frames: Array[String] = []
@@ -952,11 +952,30 @@ func _load_bug_animation(sprite_frames: SpriteFrames, anim_name: String, folder_
 		dir.list_dir_end()
 	frames.sort()
 	
+	var total = frames.size()
+	if target_count > 0 and total > target_count:
+		var keep = {}
+		keep[0] = true
+		keep[total - 1] = true
+		for k in range(1, target_count - 1):
+			var idx = int(round(float(k) * (total - 1) / (target_count - 1)))
+			idx = max(0, min(total - 1, idx))
+			keep[idx] = true
+
+		var selected: Array[String] = []
+		var sorted_keep = keep.keys()
+		sorted_keep.sort()
+		for idx in sorted_keep:
+			selected.append(frames[idx])
+		frames = selected
+	
 	for path in frames:
 		if ResourceLoader.exists(path):
 			var tex: Texture2D = load(path)
 			if tex:
 				sprite_frames.add_frame(anim_name, tex)
+	
+
 
 func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, type: String = "") -> void:
 	var world_x = chunk.global_position.x + local_x
@@ -987,7 +1006,7 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 	if type == "bug":
 		var bug_area := Area2D.new()
 		
-		var bug_scale := Vector2(0.1, 0.1)
+		var bug_scale := Vector2(0.15, 0.15)
 		var bug_height: float = 65.0 * bug_scale.y
 		var bug_center_y: float = platform_surface_y - (bug_height * 0.5) - 8.0
 		
@@ -1004,7 +1023,7 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		
 		var sprite := AnimatedSprite2D.new()
 		var sprite_frames := SpriteFrames.new()
-		_load_bug_animation(sprite_frames, "walk", "res://assets/bug/walk/")
+		_load_bug_animation(sprite_frames, "walk", "res://assets/bug/walk/", 9)
 		sprite.sprite_frames = sprite_frames
 		sprite.play("walk")
 		sprite.scale = bug_scale
@@ -1018,7 +1037,7 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 	elif type == "bug_fly":
 		var fly_area := Area2D.new()
 		
-		var fly_scale := Vector2(0.1, 0.1)
+		var fly_scale := Vector2(0.15, 0.15)
 		var fly_height: float = 65.0 * fly_scale.y
 		
 		var random_height_offset = rng.randf_range(50.0, 250.0)
@@ -1040,7 +1059,7 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		
 		var sprite := AnimatedSprite2D.new()
 		var sprite_frames := SpriteFrames.new()
-		_load_bug_animation(sprite_frames, "fly", "res://assets/bug/fly/")
+		_load_bug_animation(sprite_frames, "fly", "res://assets/bug/fly/", 7)
 		sprite.sprite_frames = sprite_frames
 		sprite.play("fly")
 		sprite.scale = fly_scale

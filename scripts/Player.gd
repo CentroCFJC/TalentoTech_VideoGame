@@ -191,11 +191,11 @@ func _setup_sprite_frames() -> void:
 	sprite_frames.add_animation("fall")
 	sprite_frames.add_animation("death")
 
-	sprite_frames.set_animation_speed("run", 32.0)
-	sprite_frames.set_animation_speed("jump", 30.0)
-	sprite_frames.set_animation_speed("double_jump", 60.0)
-	sprite_frames.set_animation_speed("fall", 30.0)
-	sprite_frames.set_animation_speed("death", 45.0)
+	sprite_frames.set_animation_speed("run", 12.0)
+	sprite_frames.set_animation_speed("jump", 10.0)
+	sprite_frames.set_animation_speed("double_jump", 16.0)
+	sprite_frames.set_animation_speed("fall", 14.0)
+	sprite_frames.set_animation_speed("death", 10.0)
 	
 	sprite_frames.set_animation_loop("run", true)
 	sprite_frames.set_animation_loop("jump", false)
@@ -203,33 +203,39 @@ func _setup_sprite_frames() -> void:
 	sprite_frames.set_animation_loop("fall", false)
 	sprite_frames.set_animation_loop("death", false)
 
-	for i in range(1, 53):
-		var path = "res://assets/rocket_v2/correr/frame_%03d.png" % i
-		if ResourceLoader.exists(path):
-			sprite_frames.add_frame("run", load(path))
-			
-	for i in range(33, 77):
-		var path = "res://assets/rocket_v2/salto/frame_%03d.png" % i
-		if ResourceLoader.exists(path):
-			sprite_frames.add_frame("jump", load(path))
-			
-	for i in range(30, 92):
-		var path = "res://assets/rocket_v2/doble_salto/frame_%03d.png" % i
-		if ResourceLoader.exists(path):
-			sprite_frames.add_frame("double_jump", load(path))
-			
-	for i in range(77, 103):
-		var path = "res://assets/rocket_v2/caida/frame_%03d.png" % i
-		if ResourceLoader.exists(path):
-			sprite_frames.add_frame("fall", load(path))
-			
-	for i in range(35, 122):
-		var path = "res://assets/rocket_v2/death/frame_%03d.png" % i
-		if ResourceLoader.exists(path):
-			sprite_frames.add_frame("death", load(path))
+	_add_frames_reduced(sprite_frames, "run", "res://assets/rocket_v2/correr/frame_%03d.png", 1, 53, 20)
+	_add_frames_reduced(sprite_frames, "jump", "res://assets/rocket_v2/salto/frame_%03d.png", 33, 77, 18)
+	_add_frames_reduced(sprite_frames, "double_jump", "res://assets/rocket_v2/doble_salto/frame_%03d.png", 30, 92, 20)
+	_add_frames_reduced(sprite_frames, "fall", "res://assets/rocket_v2/caida/frame_%03d.png", 77, 103, 14)
+	_add_frames_reduced(sprite_frames, "death", "res://assets/rocket_v2/death/frame_%03d.png", 35, 122, 20)
 
 	sprite.sprite_frames = sprite_frames
 	sprite.play("run")
+
+func _add_frames_reduced(sprite_frames: SpriteFrames, anim: String, path_template: String, start: int, end: int, target_count: int) -> void:
+	var indices = []
+	for i in range(start, end):
+		if ResourceLoader.exists(path_template % i):
+			indices.append(i)
+
+	var total = indices.size()
+	if total <= target_count:
+		for idx in indices:
+			sprite_frames.add_frame(anim, load(path_template % idx))
+		return
+
+	var keep = {}
+	keep[0] = true
+	keep[total - 1] = true
+	for k in range(1, target_count - 1):
+		var idx = int(round(float(k) * (total - 1) / (target_count - 1)))
+		idx = max(0, min(total - 1, idx))
+		keep[idx] = true
+
+	var sorted_keep = keep.keys()
+	sorted_keep.sort()
+	for idx in sorted_keep:
+		sprite_frames.add_frame(anim, load(path_template % indices[idx]))
 
 func _physics_process(delta: float) -> void:
 	if is_dead:

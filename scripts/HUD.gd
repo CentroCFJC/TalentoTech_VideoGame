@@ -89,8 +89,8 @@ const GAME_OVER_CARD_SIZE: Vector2 = Vector2(350, 120)
 const GAME_OVER_CARD_GAP: Vector2 = Vector2(20, 10)
 const GAME_OVER_DEATH_TITLE_RECT: Rect2 = Rect2(Vector2(340, 815), Vector2(560, 140))
 const GAME_OVER_DEATH_DETAIL_RECT: Rect2 = Rect2(Vector2(180, 1005), Vector2(570, 220))
-const GAME_OVER_DEATH_CAUSE_ICON_RECT: Rect2 = Rect2(Vector2(230, 830), Vector2(110, 110))
-const GAME_OVER_DEATH_DETAIL_ICON_RECT: Rect2 = Rect2(Vector2(770, 1060), Vector2(110, 110))
+const GAME_OVER_DEATH_CAUSE_ICON_RECT: Rect2 = Rect2(Vector2(210, 810), Vector2(150, 150))
+const GAME_OVER_DEATH_DETAIL_ICON_RECT: Rect2 = Rect2(Vector2(750, 1050), Vector2(150, 150))
 const GAME_OVER_CTA_RECT: Rect2 = Rect2(Vector2(180, 1225), Vector2(725, 150))
 
 # Campista data: video basename → title + subtitle
@@ -1274,15 +1274,15 @@ func _build_death_cause_ui() -> void:
 		"bug":
 			headline = "¡Un bug te detuvo!"
 			detail = "Adquiere la habilidad Programación para eliminar bugs facilmente."
-			cause_icon_path = "res://assets/bug/bug_1.png"
+			cause_icon_path = "res://assets/bug/walk/frame_017.png"
 			detail_icon_path = "res://assets/powerups/powerup_code.png"
 			show_cause_icon = true
 			show_detail_icon = true
 		"fall":
 			headline = "¡Caíste al vacío!"
 			detail = "Usa el doble salto para superar los vacíos más largos."
-			cause_icon_path = "res://assets/rocket/Fall_2.png"
-			detail_icon_path = "res://assets/rocket/DoubleJump_3.png"
+			cause_icon_path = "res://assets/rocket_v2/caida/frame_102.png"
+			detail_icon_path = "res://assets/rocket_v2/doble_salto/frame_085.png"
 			show_cause_icon = true
 			show_detail_icon = true
 		"server":
