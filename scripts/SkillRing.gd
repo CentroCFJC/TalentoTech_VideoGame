@@ -17,10 +17,12 @@ var _textures: Array[Texture2D] = []
 var _ref_center_y: float = 0.0
 
 # Tambaleo suave y continuo para que los aros no se vean estaticos.
-const WOBBLE_AMPLITUDE: float = 2.0   # grados maximo de balanceo
-const WOBBLE_SPEED: float = 5.0       # rad/s
+const WOBBLE_AMPLITUDE: float = 2.0          # grados fijos de balanceo
+const WOBBLE_BASE_SPEED: float = 5.0         # rad/s con 1 stack
+const WOBBLE_SPEED_PER_STACK: float = 2.5    # rad/s adicionales por cada stack extra
 var _wobble_time: float = 0.0
 var _wobble_offset: float = 0.0
+var _current_wobble_speed: float = 5.0
 
 func _ready() -> void:
 	_load_textures()
@@ -74,7 +76,7 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_wobble_time += delta
-	rotation_degrees = sin(_wobble_time * WOBBLE_SPEED + _wobble_offset) * WOBBLE_AMPLITUDE
+	rotation_degrees = sin(_wobble_time * _current_wobble_speed + _wobble_offset) * WOBBLE_AMPLITUDE
 
 func set_stacks(value: int) -> void:
 	value = clampi(value, 0, _textures.size())
@@ -84,6 +86,8 @@ func set_stacks(value: int) -> void:
 	visible = _stacks > 0 and _sprite != null
 	if _stacks > 0 and _sprite:
 		_apply_texture(_stacks - 1)
+	# Actualizar velocidad del wobble segun las cargas
+	_current_wobble_speed = WOBBLE_BASE_SPEED + WOBBLE_SPEED_PER_STACK * max(0, _stacks - 1)
 
 func _apply_texture(idx: int) -> void:
 	var tex: Texture2D = _textures[idx]

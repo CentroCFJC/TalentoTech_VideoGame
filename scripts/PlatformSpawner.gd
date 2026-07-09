@@ -262,7 +262,8 @@ func _generate_chunk(chunk_x: float) -> void:
 	var patterns := _get_available_patterns(difficulty)
 	
 	# Chunk 0: intro flat, Chunks 1-2: movement tutorials (salto/doble salto),
-	# Chunk 3: selector de dificultad.
+	# Chunk 3: selector de dificultad, Chunk 4: plano corto post-selector para
+	# que el jugador se acostumbre a la velocidad de la dificultad elegida.
 	# Tutorials are no longer fixed chunks; they are queued after key sections:
 	# - 1st key section -> code/bugs tutorial.
 	# - 2nd key section -> CPU/servers tutorial.
@@ -280,6 +281,9 @@ func _generate_chunk(chunk_x: float) -> void:
 	elif int(chunk_x / CHUNK_WIDTH) == 3 and not _difficulty_selector_spawned:
 		_build_difficulty_selector(chunk)
 		_difficulty_selector_spawned = true
+		return
+	elif int(chunk_x / CHUNK_WIDTH) == 4:
+		_build_flat_ground(chunk)
 		return
 	elif _key_chunks_remaining > 0:
 		var spawn_key: bool = _key_chunks_remaining == 2
@@ -572,52 +576,74 @@ func _make_solid_circle(color: Color, size: int) -> Panel:
 	circle.add_theme_stylebox_override("panel", style)
 	return circle
 
-## Panel de aviso previo al selector de dificultad: muestra el texto del
-## mensaje seguido de tres pequenos circulos (verde, amarillo, rojo) que
-## representan las tres zonas de la barrera. Mismo estilo visual que los
-## paneles de los tutoriales anteriores.
-func _create_difficulty_intro_panel(chunk: Node2D, message: String, pos: Vector2) -> void:
-	var bg := PanelContainer.new()
+## Panel del titulo previo al selector de dificultad: muestra solo el texto
+## principal.
+func _create_difficulty_title_panel(chunk: Node2D, message: String, pos: Vector2) -> void:
+	var bg := _make_difficulty_panel()
 	bg.position = pos
 
+	var label := Label.new()
+	label.add_theme_font_override("font", _mono_font)
+	label.text = message
+	label.add_theme_font_size_override("font_size", 22)
+	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bg.add_child(label)
+
+	chunk.add_child(bg)
+
+## Panel de la leyenda del selector de dificultad: tres colores en vertical
+## con sus textos (rojo Dificil arriba, amarillo Medio, verde Facil abajo).
+## Va a la derecha del panel del titulo.
+func _create_difficulty_legend_panel(chunk: Node2D, pos: Vector2) -> void:
+	var bg := _make_difficulty_panel()
+	bg.position = pos
+
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 8)
+
+	const DOT_SIZE := 22
+	var legend_data: Array[Dictionary] = [
+		{"text": "Dificil", "color": DIFFICULTY_ZONE_COLORS[2]},
+		{"text": "Medio",   "color": DIFFICULTY_ZONE_COLORS[1]},
+		{"text": "Facil",   "color": DIFFICULTY_ZONE_COLORS[0]},
+	]
+	for data in legend_data:
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 10)
+		row.add_child(_make_solid_circle(data["color"], DOT_SIZE))
+
+		var difficulty_label := Label.new()
+		difficulty_label.add_theme_font_override("font", _mono_font)
+		difficulty_label.text = data["text"]
+		difficulty_label.add_theme_font_size_override("font_size", 20)
+		difficulty_label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
+		difficulty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(difficulty_label)
+
+		vbox.add_child(row)
+
+	bg.add_child(vbox)
+	chunk.add_child(bg)
+
+## Estilo base compartido para los dos paneles del selector de dificultad.
+func _make_difficulty_panel() -> PanelContainer:
+	var bg := PanelContainer.new()
 	var bg_style := StyleBoxFlat.new()
 	bg_style.bg_color = Color(0, 0, 0, 0.55)
-	bg_style.content_margin_left = 10
-	bg_style.content_margin_right = 10
-	bg_style.content_margin_top = 6
-	bg_style.content_margin_bottom = 6
+	bg_style.content_margin_left = 12
+	bg_style.content_margin_right = 12
+	bg_style.content_margin_top = 10
+	bg_style.content_margin_bottom = 10
 	bg_style.corner_radius_top_left = 8
 	bg_style.corner_radius_top_right = 8
 	bg_style.corner_radius_bottom_left = 8
 	bg_style.corner_radius_bottom_right = 8
 	bg_style.anti_aliasing = true
 	bg.add_theme_stylebox_override("panel", bg_style)
-
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 14)
-
-	var label := Label.new()
-	label.add_theme_font_override("font", _mono_font)
-	label.text = message
-	label.add_theme_font_size_override("font_size", 26)
-	label.add_theme_color_override("font_color", Color(1, 1, 1, 1.0))
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(label)
-
-	# Tres pequenos circulos verde / amarillo / rojo (mismo color base de las
-	# zonas de la barrera, pero solidos).
-	var dots := HBoxContainer.new()
-	dots.alignment = BoxContainer.ALIGNMENT_CENTER
-	dots.add_theme_constant_override("separation", 8)
-	const DOT_SIZE := 22
-	dots.add_child(_make_solid_circle(DIFFICULTY_ZONE_COLORS[0], DOT_SIZE))
-	dots.add_child(_make_solid_circle(DIFFICULTY_ZONE_COLORS[1], DOT_SIZE))
-	dots.add_child(_make_solid_circle(DIFFICULTY_ZONE_COLORS[2], DOT_SIZE))
-	row.add_child(dots)
-
-	bg.add_child(row)
-	chunk.add_child(bg)
+	return bg
 
 func _build_ground_gap(chunk: Node2D, large: bool) -> void:
 	var gap_size: float = MIN_GAP_WIDTH if not large else rng.randf_range(150.0, MAX_GAP_WIDTH)
@@ -744,23 +770,26 @@ func _build_difficulty_selector(chunk: Node2D) -> void:
 	last_platform_y = GROUND_Y
 	_create_platform(chunk, 0, GROUND_Y, CHUNK_WIDTH)
 
-	# Panel de aviso "Elige la dificultad" antes de la barrera, con el mismo
-	# estilo visual que los paneles de los tutoriales anteriores, pero con
-	# tres pequenos circulos verde/amarillo/rojo en lugar del icono.
-	_create_difficulty_intro_panel(
+	# Paneles de aviso separados y colocados uno al lado del otro: primero el
+	# titulo, a su derecha la leyenda de colores, y mas a la derecha el selector.
+	_create_difficulty_title_panel(
 		chunk,
-		"Elige la dificultad",
-		Vector2(80.0, last_platform_y - 165)
+		"Salta para elegir tu dificultad",
+		Vector2(40.0, last_platform_y - 165)
+	)
+	_create_difficulty_legend_panel(
+		chunk,
+		Vector2(500.0, last_platform_y - 195)
 	)
 
-	# La barrera se desplaza hacia el final del chunk para que no se solape
-	# con el panel de aviso que aparece al inicio.
-	var barrier_x: float = CHUNK_WIDTH * 0.78
+	# La barrera se desplaza hacia el final del chunk para dejar mas espacio
+	# entre los paneles y el selector.
+	var barrier_x: float = CHUNK_WIDTH * 0.96
 
 	# Geometria de la barrera (en coords del chunk = coords del mundo, ya que
 	# el chunk esta posicionado en y=0).
 	var ground_surface: float = GROUND_Y - PLATFORM_HEIGHT * 0.5  # 490
-	var barrier_thickness: float = 48.0
+	var barrier_thickness: float = 36.0
 	var zone_height: float = 90.0
 	# La barrera cubre desde y=200 (encima de zona 3) hasta y=495 (liga con suelo).
 	var barrier_top_y: float = ground_surface - 3.0 * zone_height  # 220
