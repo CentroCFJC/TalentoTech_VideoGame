@@ -1,7 +1,7 @@
 extends Node
 
 ## SubtitleManager — Independent subtitle system for video playback.
-## Loads .srt files, parses them, and displays synchronized subtitles
+## Loads .json subtitle files, parses them, and displays synchronized subtitles
 ## that remain visible even when the video is minimized.
 
 signal subtitles_started
@@ -30,7 +30,7 @@ var _container: Control = null
 
 var _mono_font: SystemFont = null
 
-const SRT_EXTENSIONS: PackedStringArray = [".srt"]
+const SUBTITLE_EXTENSIONS: PackedStringArray = [".json"]
 
 # ── Lifecycle ──────────────────────────────────────────────────
 
@@ -46,9 +46,7 @@ func _process(_delta: float) -> void:
 		stop_subtitles()
 		return
 
-	# Check if video is still playing
 	if not _video_player.is_playing():
-		stop_subtitles()
 		return
 
 	var current_time: float = _video_player.stream_position
@@ -67,15 +65,15 @@ func start_subtitles(video_player: VideoStreamPlayer, video_path: String, video_
 	_video_panel = video_panel
 	_is_pip_mode = false
 
-	# Find and load .srt file
-	var srt_path := _find_srt_path(video_path)
-	if srt_path.is_empty():
-		print("[SubtitleManager] No .srt found for: ", video_path)
+	# Find and load subtitle file
+	var json_path := _find_subtitle_path(video_path)
+	if json_path.is_empty():
+		print("[SubtitleManager] No subtitle file found for: ", video_path)
 		return
 
-	_subtitles = _parse_srt(srt_path)
+	_subtitles = _load_json(json_path)
 	if _subtitles.is_empty():
-		print("[SubtitleManager] .srt is empty or invalid: ", srt_path)
+		print("[SubtitleManager] Subtitle file is empty or invalid: ", json_path)
 		return
 
 	_current_index = -1
@@ -114,103 +112,66 @@ func clear_all() -> void:
 	_video_player = null
 	_video_panel = null
 
-# ── SRT File Discovery ────────────────────────────────────────
+# ── Subtitle File Discovery ──────────────────────────────────
 
-func _find_srt_path(video_path: String) -> String:
-	# video_path is like "res://assets/videos/Andres-Felipe-Baja_720p.ogv"
-	# We need to find "res://assets/videos/Andres-Felipe-Baja_720p.srt"
+func _find_subtitle_path(video_path: String) -> String:
 	var base := video_path.get_basename()
-	for ext in SRT_EXTENSIONS:
-		var srt_path := base + ext
-		if FileAccess.file_exists(srt_path):
-			return srt_path
+	for ext in SUBTITLE_EXTENSIONS:
+		var json_path := base + ext
+		var exists := FileAccess.file_exists(json_path)
+		print("[SubtitleManager] Buscando JSON: ", json_path, " -> ", "EXISTE" if exists else "NO EXISTE")
+		if exists:
+			return json_path
+	var alt_base := base.trim_suffix("_720p")
+	if alt_base != base:
+		for ext in SUBTITLE_EXTENSIONS:
+			var json_path := alt_base + ext
+			var exists := FileAccess.file_exists(json_path)
+			print("[SubtitleManager] Buscando JSON (fallback): ", json_path, " -> ", "EXISTE" if exists else "NO EXISTE")
+			if exists:
+				return json_path
+	print("[SubtitleManager] No se encontro archivo JSON para: ", video_path)
 	return ""
 
-# ── SRT Parser ─────────────────────────────────────────────────
+# ── JSON Loader ───────────────────────────────────────────────
 
-func _parse_srt(srt_path: String) -> Array[Dictionary]:
+func _load_json(json_path: String) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 
-	var file := FileAccess.open(srt_path, FileAccess.READ)
+	var file := FileAccess.open(json_path, FileAccess.READ)
 	if not file:
-		push_warning("[SubtitleManager] Cannot open: ", srt_path)
+		push_warning("[SubtitleManager] No se pudo abrir: ", json_path)
 		return result
+	print("[SubtitleManager] Archivo JSON abierto correctamente: ", json_path)
 
 	var content := file.get_as_text()
 	file.close()
 
-	# Normalize line endings to \n
-	content = content.replace("\r\n", "\n").replace("\r", "\n")
+	var json := JSON.new()
+	var parse_result := json.parse(content)
+	if parse_result != OK:
+		push_warning("[SubtitleManager] Error al parsear JSON: ", json.get_error_message(), " (linea ", json.get_error_line(), ")")
+		return result
 
-	# Split into blocks by double newline
-	var blocks := content.strip_edges().split("\n\n")
-	for block in blocks:
-		var entry := _parse_srt_block(block)
-		if entry.size() > 0:
-			result.append(entry)
+	var data = json.data
+	if typeof(data) != TYPE_ARRAY:
+		push_warning("[SubtitleManager] El JSON no es un array")
+		return result
 
+	for entry in data:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		if not entry.has("start") or not entry.has("end") or not entry.has("text"):
+			push_warning("[SubtitleManager] Entrada JSON invalida: ", entry)
+			continue
+		result.append({
+			"start": float(entry["start"]),
+			"end": float(entry["end"]),
+			"text": str(entry["text"])
+		})
+
+	print("[SubtitleManager] JSON cargado con ", result.size(), " entradas")
 	return result
-
-func _parse_srt_block(block: String) -> Dictionary:
-	var lines := block.strip_edges().split("\n")
-	if lines.size() < 2:
-		return {}
-
-	# Find the timestamp line (contains "-->")
-	var timestamp_line_idx := -1
-	for i in range(lines.size()):
-		if "-->" in lines[i]:
-			timestamp_line_idx = i
-			break
-
-	if timestamp_line_idx < 0:
-		return {}
-
-	# Parse timestamps
-	var parts := lines[timestamp_line_idx].split("-->")
-	if parts.size() != 2:
-		return {}
-
-	var start_time := _parse_timestamp(parts[0].strip_edges())
-	var end_time := _parse_timestamp(parts[1].strip_edges())
-
-	if start_time < 0 or end_time < 0:
-		return {}
-
-	# Collect text lines (everything after timestamp)
-	var text_lines: PackedStringArray = []
-	for i in range(timestamp_line_idx + 1, lines.size()):
-		var line := lines[i].strip_edges()
-		if not line.is_empty():
-			text_lines.append(line)
-
-	if text_lines.is_empty():
-		return {}
-
-	return {
-		"start": start_time,
-		"end": end_time,
-		"text": "\n".join(text_lines)
-	}
-
-func _parse_timestamp(ts: String) -> float:
-	# Format: HH:MM:SS,mmm or HH:MM:SS.mmm
-	ts = ts.replace(",", ".")
-
-	var main_parts := ts.split(":")
-	if main_parts.size() != 3:
-		return -1.0
-
-	var hours := main_parts[0].to_int()
-	var minutes := main_parts[1].to_int()
-
-	var sec_parts := main_parts[2].split(".")
-	var seconds := sec_parts[0].to_int()
-	var milliseconds := 0
-	if sec_parts.size() > 1:
-		milliseconds = sec_parts[1].to_int()
-
-	return float(hours * 3600 + minutes * 60 + seconds) + float(milliseconds) / 1000.0
 
 # ── Subtitle Display ──────────────────────────────────────────
 

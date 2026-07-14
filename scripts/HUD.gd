@@ -52,10 +52,8 @@ var _watched_videos: Array[String] = []
 # Video playback
 const VIDEO_FOLDER: String = "res://assets/videos/"
 const THUMBNAIL_FOLDER: String = "res://assets/miniaturas/"
-const RPI_VIDEO_SUFFIX: String = "_rpi"
 const LOW_QUALITY_VIDEO_SUFFIX: String = "_720p"
-const RPI_BUFFERING_MSEC: int = 1200
-const DEFAULT_BUFFERING_MSEC: int = 500
+const VIDEO_BUFFERING_MSEC: int = 1200
 var _video_panel: PanelContainer = null
 var _video_player: VideoStreamPlayer = null
 var _minimize_panel: PanelContainer = null
@@ -63,7 +61,6 @@ var _minimize_label: Label = null
 var _minimize_tween: Tween = null
 var _can_minimize_video: bool = false
 var _is_pip_mode: bool = false
-var _is_low_end_video_mode: bool = false
 
 # Background transition state.
 var _background: Node = null
@@ -74,7 +71,7 @@ const PIP_MARGIN: Vector2 = Vector2(8, 8)
 
 # Asset paths for HUD icons
 const ICON_SCORE: String = "res://assets/powerups/score.png"
-const ICON_BUG: String = "res://assets/bug/bug_1.png"
+const ICON_BUG: String = "res://assets/bug/walk/frame_017.png"
 const ICON_SERVER: String = "res://assets/server/server_red.png"
 const ICON_CODE: String = "res://assets/powerups/powerup_code.png"
 const ICON_CPU: String = "res://assets/powerups/powerup_cpu.png"
@@ -115,7 +112,6 @@ class SkillUpRowData:
 
 func _ready() -> void:
 	_setup_mono_font()
-	_detect_low_end_video_mode()
 
 	GameManager.score_changed.connect(_on_score_changed)
 	GameManager.state_changed.connect(_on_state_changed)
@@ -138,33 +134,9 @@ func _ready() -> void:
 	_setup_game_over_panel()
 
 	_on_state_changed(GameManager.current_state)
+	show()
 
-func _detect_low_end_video_mode() -> void:
-	# Permite forzar el modo de bajo rendimiento desde fuera del juego.
-	var force_rpi := OS.get_environment("INFINITE_RUNNER_RPI")
-	if force_rpi == "1" or force_rpi.to_lower() == "true":
-		_is_low_end_video_mode = true
-		print("[HUD] Modo de bajo rendimiento forzado por INFINITE_RUNNER_RPI")
-		return
 
-	# En Linux, intentamos detectar arquitecturas ARM de bajo rendimiento.
-	if OS.get_name() != "Linux":
-		print("[HUD] OS no es Linux (", OS.get_name(), "), modo normal")
-		return
-
-	var output: Array = []
-	var exit_code := OS.execute("uname", ["-m"], output, true)
-	print("[HUD] uname -m exit_code=", exit_code, " output=", output)
-	if exit_code == OK and not output.is_empty():
-		var machine: String = output[0].strip_edges().to_lower()
-		# aarch64, arm64, armv7l, armv8, etc.
-		if machine.begins_with("arm") or machine.begins_with("aarch64"):
-			_is_low_end_video_mode = true
-			print("[HUD] Modo de bajo rendimiento detectado para: ", machine)
-		else:
-			print("[HUD] Arquitectura no ARM: ", machine, ", modo normal")
-	else:
-		push_warning("[HUD] No se pudo detectar la arquitectura con uname -m")
 
 func _try_connect_player() -> void:
 	call_deferred("_connect_player_signal")
@@ -283,13 +255,9 @@ func _show_game_over() -> void:
 		_gameover_card.position = (viewport_size - GAME_OVER_PANEL_SIZE * card_scale) * 0.5
 
 	print("[HUD] Iniciando fade del game over")
-	if _is_low_end_video_mode:
-		# En RPi evitamos crear un tween de fade; mostramos el panel directamente.
-		gameover_panel.modulate.a = 1.0
-	else:
-		gameover_panel.modulate.a = 0.0
-		var tween := create_tween()
-		tween.tween_property(gameover_panel, "modulate:a", 1.0, 0.5)
+	gameover_panel.modulate.a = 0.0
+	var tween := create_tween()
+	tween.tween_property(gameover_panel, "modulate:a", 1.0, 0.5)
 
 	print("[HUD] Iniciando parpadeo del CTA")
 	_start_blink(_gameover_restart_cta_label)
@@ -367,15 +335,24 @@ func _create_title_label(text: String) -> Label:
 	lbl.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0, 1.0))
 	return lbl
 
-func _create_icon_texture(path: String, size: Vector2, modulate: Color = Color.WHITE) -> TextureRect:
+func _create_icon_texture(path: String, container_size: Vector2, icon_size: Vector2, modulate: Color = Color.WHITE, texture_offset: Vector2 = Vector2.ZERO) -> Control:
+	var container := Control.new()
+	container.custom_minimum_size = container_size
+	container.size = container_size
+	container.clip_contents = true
+
 	var icon := TextureRect.new()
-	icon.custom_minimum_size = size
+	icon.custom_minimum_size = icon_size
+	icon.size = icon_size
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.modulate = modulate
 	if ResourceLoader.exists(path):
 		icon.texture = load(path)
-	return icon
+
+	icon.position = (container_size - icon_size) * 0.5 + texture_offset
+	container.add_child(icon)
+	return container
 
 func _setup_mono_font() -> void:
 	_mono_font = SystemFont.new()
@@ -400,10 +377,10 @@ func _setup_progress_panel() -> void:
 	_progress_panel.offset_left   = 10
 	_progress_panel.offset_top    = 10
 	_progress_panel.offset_right  = 270
-	_progress_panel.offset_bottom = 200
+	_progress_panel.offset_bottom = 190
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 6)
+	vbox.add_theme_constant_override("separation", 0)
 	_progress_panel.add_child(vbox)
 
 	_progress_title_label = _create_title_label("PROGRESO DE LA PARTIDA")
@@ -421,7 +398,7 @@ func _setup_progress_panel() -> void:
 	_progress_best_value = best_row.value_label
 	vbox.add_child(best_row.row)
 
-	var bugs_row := _create_stat_row("BUGS ELIMINADOS", ICON_BUG, Color(0.4, 1.0, 0.6))
+	var bugs_row := _create_stat_row("BUGS ELIMINADOS", ICON_BUG, Color(0.4, 1.0, 0.6), Vector2(36, 36), Vector2(-2, -5))
 	_progress_bugs_value = bugs_row.value_label
 	vbox.add_child(bugs_row.row)
 
@@ -429,12 +406,12 @@ func _setup_progress_panel() -> void:
 	_progress_servers_value = servers_row.value_label
 	vbox.add_child(servers_row.row)
 
-func _create_stat_row(name_text: String, icon_path: String, icon_color: Color) -> StatRow:
+func _create_stat_row(name_text: String, icon_path: String, icon_color: Color, icon_size: Vector2 = Vector2(24, 24), icon_offset: Vector2 = Vector2.ZERO) -> StatRow:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 
-	var icon := _create_icon_texture(icon_path, Vector2(24, 24), icon_color)
+	var icon := _create_icon_texture(icon_path, Vector2(36, 36), icon_size, icon_color, icon_offset)
 	row.add_child(icon)
 
 	var name_label := Label.new()
@@ -515,9 +492,7 @@ func _setup_key_panel() -> void:
 
 func _get_video_basename(video_path: String) -> String:
 	var basename := video_path.get_file().get_basename()
-	if basename.ends_with(RPI_VIDEO_SUFFIX):
-		basename = basename.trim_suffix(RPI_VIDEO_SUFFIX)
-	elif basename.ends_with(LOW_QUALITY_VIDEO_SUFFIX):
+	if basename.ends_with(LOW_QUALITY_VIDEO_SUFFIX):
 		basename = basename.trim_suffix(LOW_QUALITY_VIDEO_SUFFIX)
 	return basename
 
@@ -731,9 +706,7 @@ func _setup_video_panel() -> void:
 	_video_player.autoplay = false
 	_video_player.expand = true
 	_video_player.process_mode = PROCESS_MODE_ALWAYS
-	# En Raspberry Pi / ARM aumentamos el buffer para dar margen al
-	# decodificador software de Theora y reducir macrobloques negros.
-	_video_player.buffering_msec = RPI_BUFFERING_MSEC if _is_low_end_video_mode else DEFAULT_BUFFERING_MSEC
+	_video_player.buffering_msec = VIDEO_BUFFERING_MSEC
 	_video_player.volume_db = 0.0
 	_video_panel.add_child(_video_player)
 
@@ -782,32 +755,11 @@ func _collect_video_paths() -> Array[String]:
 	var files := DirAccess.get_files_at(VIDEO_FOLDER)
 	var result: Array[String] = []
 
-	# En modo de bajo rendimiento preferimos versiones *_rpi.ogv.
-	if _is_low_end_video_mode:
-		for f in files:
-			if f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
-				result.append(VIDEO_FOLDER + f)
-		if not result.is_empty():
-			result.sort()
-			_video_paths = result
-			return result
-
-	# Modo normal: preferimos las versiones reducidas *_720p.ogv. Si existen
-	# para la carpeta, se usan exclusivamente; si no hay ninguna, usamos los
-	# .ogv originales. Se excluyen siempre las versiones *_rpi.ogv (legacy).
-	var has_720p: bool = false
 	for f in files:
-		if f.ends_with(LOW_QUALITY_VIDEO_SUFFIX + ".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
-			has_720p = true
-			break
-
-	for f in files:
-		if has_720p:
-			if f.ends_with(LOW_QUALITY_VIDEO_SUFFIX + ".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
-				result.append(VIDEO_FOLDER + f)
-		else:
-			if f.ends_with(".ogv") and not f.ends_with(RPI_VIDEO_SUFFIX + ".ogv"):
-				result.append(VIDEO_FOLDER + f)
+		if f.ends_with(LOW_QUALITY_VIDEO_SUFFIX + ".ogv"):
+			result.append(VIDEO_FOLDER + f)
+		elif f.ends_with(".ogv"):
+			result.append(VIDEO_FOLDER + f)
 	result.sort()
 	_video_paths = result
 	return result
@@ -1005,7 +957,7 @@ func _set_music_video_duck(active: bool) -> void:
 # ── Game Over panel — background image + dynamic labels ───────
 
 func _setup_game_over_panel() -> void:
-	print("[HUD] _setup_game_over_panel iniciado. RPi=", _is_low_end_video_mode)
+	print("[HUD] _setup_game_over_panel iniciado")
 	if not gameover_panel:
 		push_error("HUD: GameOverPanel no encontrado en la escena")
 		return
@@ -1021,28 +973,14 @@ func _setup_game_over_panel() -> void:
 	_gameover_card.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_gameover_card.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 
-	# En modo de bajo rendimiento evitamos cargar la textura grande del panel,
-	# que puede agotar la VRAM compartida de la Raspberry Pi. Usamos un fondo
-	# plano oscuro en el panel padre y dejamos las tarjetas y textos encima.
-	if _is_low_end_video_mode:
-		gameover_panel.modulate = Color.WHITE
-		var bg := ColorRect.new()
-		bg.name = "GameOverBackground"
-		bg.color = Color(0.02, 0.04, 0.09, 1.0)
-		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		gameover_panel.add_child(bg)
-		print("[HUD] GameOver: usando fondo plano en modo RPi")
-	elif ResourceLoader.exists(GAME_OVER_PANEL_TEXTURE):
+	if ResourceLoader.exists(GAME_OVER_PANEL_TEXTURE):
 		_gameover_card.texture = load(GAME_OVER_PANEL_TEXTURE)
 		print("[HUD] GameOver: textura del panel cargada")
 	gameover_panel.add_child(_gameover_card)
 
 	# Shared blur shader for locked camper card text.
-	# En Raspberry Pi / modo de bajo rendimiento los shaders de canvas_item
-	# pueden hacer crashar el driver GPU, así que lo omitimos en esos casos.
-	if not _is_low_end_video_mode:
-		_text_blur_shader = Shader.new()
-		_text_blur_shader.code = """
+	_text_blur_shader = Shader.new()
+	_text_blur_shader.code = """
 shader_type canvas_item;
 
 uniform float blur_size : hint_range(0.0, 2.0) = 1.0;

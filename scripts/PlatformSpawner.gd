@@ -193,10 +193,6 @@ func _process(delta: float) -> void:
 		active_chunks.erase(chunk)
 		chunk.queue_free()
 
-	# Move bugs slowly forward (toward player)
-	for bug in get_tree().get_nodes_in_group("bugs"):
-		bug.global_position.x -= BUG_MOVE_SPEED * delta
-
 	var time := Time.get_ticks_msec() / 1000.0
 	for fly in get_tree().get_nodes_in_group("bugs_fly"):
 		fly.global_position.x -= BUG_MOVE_SPEED * 1.3 * delta
@@ -933,47 +929,39 @@ func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: floa
 	
 	chunk.add_child(platform)
 
-## Carga todos los frames PNG de una carpeta como una animacion loop de SpriteFrames.
-## Los frames se ordenan alfabeticamente (frame_001, frame_002, etc.).
-func _load_bug_animation(sprite_frames: SpriteFrames, anim_name: String, folder_path: String, target_count: int = 0) -> void:
-	sprite_frames.add_animation(anim_name)
-	sprite_frames.set_animation_speed(anim_name, 10.0)
-	sprite_frames.set_animation_loop(anim_name, true)
-	
-	var frames: Array[String] = []
-	var dir := DirAccess.open(folder_path)
-	if dir:
-		dir.list_dir_begin()
-		var file: String = dir.get_next()
-		while file != "":
-			if file.ends_with(".png"):
-				frames.append(folder_path + file)
-			file = dir.get_next()
-		dir.list_dir_end()
-	frames.sort()
-	
-	var total = frames.size()
-	if target_count > 0 and total > target_count:
-		var keep = {}
-		keep[0] = true
-		keep[total - 1] = true
-		for k in range(1, target_count - 1):
-			var idx = int(round(float(k) * (total - 1) / (target_count - 1)))
-			idx = max(0, min(total - 1, idx))
-			keep[idx] = true
+const BUG_WALK_FRAMES: Array[String] = [
+	"res://assets/bug/walk/frame_017.png",
+	"res://assets/bug/walk/frame_020.png",
+	"res://assets/bug/walk/frame_022.png",
+	"res://assets/bug/walk/frame_025.png",
+	"res://assets/bug/walk/frame_028.png",
+	"res://assets/bug/walk/frame_030.png",
+	"res://assets/bug/walk/frame_033.png",
+	"res://assets/bug/walk/frame_035.png",
+	"res://assets/bug/walk/frame_038.png",
+]
 
-		var selected: Array[String] = []
-		var sorted_keep = keep.keys()
-		sorted_keep.sort()
-		for idx in sorted_keep:
-			selected.append(frames[idx])
-		frames = selected
-	
-	for path in frames:
+const BUG_FLY_FRAMES: Array[String] = [
+	"res://assets/bug/fly/frame_157.png",
+	"res://assets/bug/fly/frame_159.png",
+	"res://assets/bug/fly/frame_161.png",
+	"res://assets/bug/fly/frame_163.png",
+	"res://assets/bug/fly/frame_164.png",
+	"res://assets/bug/fly/frame_166.png",
+	"res://assets/bug/fly/frame_168.png",
+]
+
+func _load_sprite_frames(frame_paths: Array[String], anim_name: String) -> SpriteFrames:
+	var sf := SpriteFrames.new()
+	sf.add_animation(anim_name)
+	sf.set_animation_speed(anim_name, 10.0)
+	sf.set_animation_loop(anim_name, true)
+	for path in frame_paths:
 		if ResourceLoader.exists(path):
 			var tex: Texture2D = load(path)
 			if tex:
-				sprite_frames.add_frame(anim_name, tex)
+				sf.add_frame(anim_name, tex)
+	return sf
 	
 
 
@@ -1022,14 +1010,13 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		bug_area.add_child(col)
 		
 		var sprite := AnimatedSprite2D.new()
-		var sprite_frames := SpriteFrames.new()
-		_load_bug_animation(sprite_frames, "walk", "res://assets/bug/walk/", 9)
-		sprite.sprite_frames = sprite_frames
+		sprite.sprite_frames = _load_sprite_frames(BUG_WALK_FRAMES, "walk")
 		sprite.play("walk")
 		sprite.scale = bug_scale
 		sprite.z_index = 1
 		bug_area.add_child(sprite)
 		
+		bug_area.script = preload("res://scripts/Enemy.gd")
 		bug_area.body_entered.connect(_on_spike_body_entered.bind(bug_area))
 		bug_area.monitoring = true
 		chunk.add_child(bug_area)
@@ -1058,9 +1045,7 @@ func _create_obstacle(chunk: Node2D, local_x: float, platform_surface_y: float, 
 		fly_area.add_child(col)
 		
 		var sprite := AnimatedSprite2D.new()
-		var sprite_frames := SpriteFrames.new()
-		_load_bug_animation(sprite_frames, "fly", "res://assets/bug/fly/", 7)
-		sprite.sprite_frames = sprite_frames
+		sprite.sprite_frames = _load_sprite_frames(BUG_FLY_FRAMES, "fly")
 		sprite.play("fly")
 		sprite.scale = fly_scale
 		sprite.z_index = 1
