@@ -466,12 +466,6 @@ func _setup_key_panel() -> void:
 	_key_panel.add_child(hbox)
 
 	var ogv_files := _collect_video_paths()
-	var thumb_map: Dictionary = {}
-	var thumb_files := DirAccess.get_files_at(THUMBNAIL_FOLDER)
-	if thumb_files:
-		for f in thumb_files:
-			if f.ends_with(".png"):
-				thumb_map[f.get_basename()] = THUMBNAIL_FOLDER + f
 
 	for i in range(mini(len(ogv_files), KEY_SLOT_COUNT)):
 		var video_path := ogv_files[i]
@@ -483,8 +477,8 @@ func _setup_key_panel() -> void:
 		slot.expand_mode  = TextureRect.EXPAND_IGNORE_SIZE
 		slot.modulate = Color(0.15, 0.15, 0.2, 0.55)
 
-		var thumbnail_path: String = thumb_map.get(basename, "")
-		if not thumbnail_path.is_empty() and ResourceLoader.exists(thumbnail_path):
+		var thumbnail_path: String = THUMBNAIL_FOLDER + basename + ".png"
+		if ResourceLoader.exists(thumbnail_path):
 			slot.texture = load(thumbnail_path)
 
 		hbox.add_child(slot)
@@ -841,7 +835,12 @@ func _on_video_key_collected() -> void:
 	_set_music_video_duck(true)
 
 func _input(event: InputEvent) -> void:
-	if _video_panel and _video_panel.visible and not _is_pip_mode and _can_minimize_video and event.is_action_pressed("ui_accept"):
+	if not (_video_panel and _video_panel.visible and not _is_pip_mode and _can_minimize_video):
+		return
+	var minimize := event.is_action_pressed("ui_accept")
+	if OS.has_feature("mobile") and event is InputEventScreenTouch and event.pressed:
+		minimize = true
+	if minimize:
 		_enter_pip_mode()
 		get_viewport().set_input_as_handled()
 

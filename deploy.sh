@@ -30,9 +30,7 @@ echo
 echo "Asignando permisos..."
 
 ssh "$PI_USER@$PI_IP" \
-"chmod +x \
-'/home/ccu-pi1/Desktop/linux_arm64/Infinite Runner.arm64' \
-'/home/ccu-pi1/Desktop/linux_arm64/Infinite Runner.sh'"
+"chmod +x '/home/ccu-pi1/Desktop/linux_arm64/Infinite Runner.arm64'"
 
 echo
 echo "=========================================="

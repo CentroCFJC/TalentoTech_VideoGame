@@ -56,15 +56,33 @@ func _init_powerup_stacks() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("jump"):
-		match current_state:
-			State.TITLE:
-				if not _is_transitioning:
-					start_game()
-					get_viewport().set_input_as_handled()
-			State.GAME_OVER:
-				if not _is_transitioning:
-					restart_game()
-					get_viewport().set_input_as_handled()
+		if _on_primary_action_pressed():
+			get_viewport().set_input_as_handled()
+
+## Entrada táctil (solo móvil): el tap ejecuta la misma acción que el botón físico.
+func _input(event: InputEvent) -> void:
+	if not OS.has_feature("mobile"):
+		return
+	if not (event is InputEventScreenTouch):
+		return
+	var touch := event as InputEventScreenTouch
+	if touch.pressed:
+		_on_primary_action_pressed()
+		Input.action_press("jump")
+	else:
+		Input.action_release("jump")
+
+func _on_primary_action_pressed() -> bool:
+	match current_state:
+		State.TITLE:
+			if not _is_transitioning:
+				start_game()
+				return true
+		State.GAME_OVER:
+			if not _is_transitioning:
+				restart_game()
+				return true
+	return false
 
 ## Start a new game from title screen
 func start_game() -> void:
