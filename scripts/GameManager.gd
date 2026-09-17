@@ -33,7 +33,7 @@ var bugs_eliminated: int = 0
 var servers_secured: int = 0
 
 # Power-up stack system
-const POWERUP_TYPES := ["code", "cpu"]
+const POWERUP_TYPES := ["cloud", "code", "cpu"]
 var max_stacks_per_powerup: int = 3
 var _powerup_stacks: Dictionary = {}
 

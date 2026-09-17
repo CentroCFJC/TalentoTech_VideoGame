@@ -16,6 +16,11 @@ const COYOTE_TIME: float = 0.12
 const JUMP_BUFFER_TIME: float = 0.1
 const MAX_JUMPS: int = 2                  # Double jump
 const DOUBLE_JUMP_MULTIPLIER: float = 0.85 # Second jump is slightly weaker
+# Rescate con nube (Fase 3): rebote que devuelve al jugador a altura de plataformas.
+# Con gravedad 980, -1200 sube ~735px: desde y=1000 hasta ~y=265, por encima
+# incluso de las plataformas mas altas (steps hasta y≈290, flotantes hasta y≈340).
+const RESCUE_BOUNCE_VELOCITY: float = -1200.0
+const RESCUE_CLOUD_SCALE: float = 0.3
 
 @export var run_animation_scale: float = 0.88
 
@@ -38,6 +43,10 @@ var fall_timeout: float = 0.0
 var start_x: float = 0.0
 var jumps_remaining: int = MAX_JUMPS
 var _jump_lockout_timer: float = 0.0
+# Estado explicito de rescate: true desde el rebote de la nube hasta el
+# aterrizaje (o muerte/reinicio). Mientras sea true, Rocket es inmune a
+# bugs/servidores. Un salto/doble salto normal NUNCA lo activa.
+var rescue_active: bool = false
 
 signal powerup_changed(type: String, stacks: int)
 
@@ -49,6 +58,7 @@ var gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity")
 @onready var jump_sfx: AudioStreamPlayer2D = $JumpSFX
 @onready var double_jump_sfx: AudioStreamPlayer2D = $DoubleJumpSFX
 @onready var skill_ring_manager: Node2D = $SkillRingManager
+@onready var cloud_reserve_manager: Node2D = $CloudReserveManager
 
 func _ready() -> void:
 	add_to_group("player")
@@ -72,6 +82,7 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			# Reseteo completo del estado del player (no se recarga la escena)
 			is_dead = false
 			is_falling_out = false
+			rescue_active = false
 			fall_timeout = 0.0
 			jumps_remaining = MAX_JUMPS
 			jump_buffer_timer = 0.0
@@ -124,14 +135,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_P:
 			var code_stacks := GameManager.GetStackCount("code")
 			var cpu_stacks := GameManager.GetStackCount("cpu")
-			if code_stacks >= GameManager.max_stacks_per_powerup and cpu_stacks >= GameManager.max_stacks_per_powerup:
+			var cloud_stacks := GameManager.GetStackCount("cloud")
+			if code_stacks >= GameManager.max_stacks_per_powerup and cpu_stacks >= GameManager.max_stacks_per_powerup and cloud_stacks >= GameManager.max_stacks_per_powerup:
 				GameManager.ResetAllStacks()
 			else:
 				GameManager.AddStack("code")
 				GameManager.AddStack("cpu")
+				GameManager.AddStack("cloud")
 			_update_skill_rings()
 			emit_signal("powerup_changed", "code", GameManager.GetStackCount("code"))
 			emit_signal("powerup_changed", "cpu", GameManager.GetStackCount("cpu"))
+			emit_signal("powerup_changed", "cloud", GameManager.GetStackCount("cloud"))
+		KEY_O:
+			# DEBUG: consume una nube visualmente para probar Fase 2
+			if GameManager.GetStackCount("cloud") > 0:
+				GameManager.ConsumeStack("cloud")
+				_update_skill_rings()
+				emit_signal("powerup_changed", "cloud", GameManager.GetStackCount("cloud"))
 # ── END DEBUG ──
 
 func _process(delta: float) -> void:
@@ -251,16 +271,21 @@ func _physics_process(delta: float) -> void:
 		collision_mask = 2  # Only environment (layer 2) for landing on lower platforms
 
 	# --- Fall death — fall off-screen before dying ---
+	# Si hay una nube disponible, el jugador rebota sobre ella en lugar de caer.
 	if global_position.y > 1000 and not is_falling_out:
-		is_falling_out = true
-		collision_layer = 0
-		collision_mask = 0
-		fall_timeout = 2.5
-		SFXManager.play("fall down")
-		var cam: Camera2D = $Camera2D
-		if cam and is_instance_valid(cam) and get_tree().current_scene and is_instance_valid(get_tree().current_scene):
-			if cam.get_parent() != get_tree().current_scene:
-				cam.reparent(get_tree().current_scene)
+		if GameManager.GetStackCount("cloud") > 0:
+			_rescue_with_cloud()
+		else:
+			rescue_active = false
+			is_falling_out = true
+			collision_layer = 0
+			collision_mask = 0
+			fall_timeout = 2.5
+			SFXManager.play("fall down")
+			var cam: Camera2D = $Camera2D
+			if cam and is_instance_valid(cam) and get_tree().current_scene and is_instance_valid(get_tree().current_scene):
+				if cam.get_parent() != get_tree().current_scene:
+					cam.reparent(get_tree().current_scene)
 
 	if is_falling_out:
 		velocity.y += gravity * delta
@@ -300,6 +325,8 @@ func _physics_process(delta: float) -> void:
 		velocity.y += gravity * delta
 		coyote_timer -= delta
 	else:
+		# Aterrizar sobre una plataforma finaliza el estado de rescate.
+		rescue_active = false
 		# Restore collision if it was disabled by early fall hazard protection
 		if not is_falling_out and collision_layer == 0:
 			collision_layer = 1
@@ -351,6 +378,7 @@ func die(cause: String = "") -> void:
 	if is_dead:
 		return
 	is_dead = true
+	rescue_active = false
 	_clear_skill_rings()
 	if cause == "fall":
 		GameManager.on_player_death(cause)
@@ -385,13 +413,58 @@ func take_damage(cause: String = "bug") -> bool:
 	die(cause)
 	return false
 
+## Rescate con nube (Fase 3): consume una carga de "cloud" y rebota de vuelta
+## a la altura de las plataformas, con el doble salto disponible para ajustar
+## el aterrizaje y evitar caer en un nuevo hueco.
+func _rescue_with_cloud() -> void:
+	GameManager.ConsumeStack("cloud")
+	emit_signal("powerup_changed", "cloud", GameManager.GetStackCount("cloud"))
+	_update_skill_rings()
+	_spawn_rescue_cloud_visual()
+	# Rebote hacia arriba con altura suficiente para alcanzar plataformas.
+	velocity.y = RESCUE_BOUNCE_VELOCITY
+	# Doble salto disponible para ajustar el aterrizaje.
+	jumps_remaining = MAX_JUMPS
+	coyote_timer = 0.0
+	jump_buffer_timer = 0.0
+	# Estado de rescate: inmunidad a bugs/servidores durante TODO el trayecto
+	# (ascenso, punto maximo y descenso) hasta aterrizar.
+	# collision_layer = 0 es imprescindible: bugs/servers son Area2D con
+	# mask=1 y detectan a Rocket por SU layer; la mask de Rocket no bloquea
+	# esa deteccion. Mismo mecanismo que la proteccion de caida (y > 500).
+	rescue_active = true
+	collision_layer = 0
+	collision_mask = 2  # Mantiene interaccion fisica con plataformas (capa 2)
+	SFXManager.play("arcade-game-achievement-bling-489759")
+
+## Nube visual del rescate: aparece bajo el jugador, se comprime con el rebote
+## y se desvanece. Vive en el mundo (no sigue al jugador).
+func _spawn_rescue_cloud_visual() -> void:
+	var tex := load("res://assets/clouds/cloud.png") as Texture2D
+	if not tex:
+		return
+	var cloud := Sprite2D.new()
+	cloud.texture = tex
+	cloud.scale = Vector2(RESCUE_CLOUD_SCALE, RESCUE_CLOUD_SCALE)
+	cloud.global_position = global_position + Vector2(0, 24.0)
+	cloud.z_index = 2
+	cloud.add_to_group("__rescue_clouds__")
+	get_tree().current_scene.add_child(cloud)
+	var tween := cloud.create_tween()
+	tween.set_parallel(true)
+	# Squash: la nube se aplasta con el impacto del rebote.
+	tween.tween_property(cloud, "scale", Vector2(RESCUE_CLOUD_SCALE * 1.4, RESCUE_CLOUD_SCALE * 0.6), 0.12)
+	tween.tween_property(cloud, "modulate:a", 0.0, 0.5).set_delay(0.15)
+	tween.set_parallel(false)
+	tween.tween_callback(cloud.queue_free)
+
 # ── PowerUp System ─────────────────────────────────────────────
 signal video_key_collected
 
 ## Called by PowerUp.gd when the player touches a collectible
 func apply_powerup(type: String, _duration: float) -> void:
 	match type:
-		"code", "cpu":
+		"code", "cpu", "cloud":
 			SFXManager.play("correct-game-show-alert-499485")
 			GameManager.AddStack(type)
 			var stacks := GameManager.GetStackCount(type)
@@ -407,8 +480,12 @@ func _update_skill_rings() -> void:
 	if skill_ring_manager and is_instance_valid(skill_ring_manager):
 		skill_ring_manager.set_code_stacks(GameManager.GetStackCount("code"))
 		skill_ring_manager.set_cpu_stacks(GameManager.GetStackCount("cpu"))
+	if cloud_reserve_manager and is_instance_valid(cloud_reserve_manager):
+		cloud_reserve_manager.set_cloud_count(GameManager.GetStackCount("cloud"))
 
 func _clear_skill_rings() -> void:
 	if skill_ring_manager and is_instance_valid(skill_ring_manager):
 		skill_ring_manager.set_code_stacks(0)
 		skill_ring_manager.set_cpu_stacks(0)
+	if cloud_reserve_manager and is_instance_valid(cloud_reserve_manager):
+		cloud_reserve_manager.set_cloud_count(0)

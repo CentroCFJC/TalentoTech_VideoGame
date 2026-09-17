@@ -55,6 +55,11 @@ var _servers_unlocked: bool = false
 var _queue_code_tutorial: bool = false
 var _queue_cpu_tutorial: bool = false
 
+# Fase de power-ups post-tutorial: determina las probabilidades de spawn
+# de power-ups fuera de los tutoriales.
+enum PowerupPhase { CLOUD, CODE, CPU }
+var _powerup_phase: PowerupPhase = PowerupPhase.CLOUD
+
 # Server settings
 const SERVER_WIDTH: float = 48.0
 const SERVER_HEIGHT: float = 48.0
@@ -117,6 +122,7 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			last_server_spawn_x = -2000.0
 			# El selector de dificultad aparece una unica vez por partida.
 			_difficulty_selector_spawned = false
+			_powerup_phase = PowerupPhase.CLOUD
 			camera = null
 			# Liberar todos los chunks existentes y empezar limpio
 			# Los bugs/servers son hijos de los chunks, asi que se liberan solos.
@@ -126,6 +132,10 @@ func _on_state_changed(new_state: GameManager.State) -> void:
 			active_chunks.clear()
 			# Los PowerUp no son hijos de chunks; limpiarlos por grupo runtime
 			for n in get_tree().get_nodes_in_group("__powerups_runtime__"):
+				if is_instance_valid(n):
+					n.queue_free()
+			# Las nubes de rescate tampoco son hijas de chunks
+			for n in get_tree().get_nodes_in_group("__rescue_clouds__"):
 				if is_instance_valid(n):
 					n.queue_free()
 		GameManager.State.TITLE:
@@ -212,18 +222,26 @@ func _spawn_powerup(chunk: Node2D, world_x: float, world_y: float, p_type: Strin
 	pu.position = Vector2(world_x - chunk.global_position.x, world_y - chunk.global_position.y)
 	chunk.add_child(pu)
 
-## Spawns a power-up at the beginning of an obstacle pattern chunk
+## Spawns a power-up at the beginning of an obstacle pattern chunk.
+## La probabilidad depende de la fase post-tutorial actual; los tutoriales
+## manejan sus propios power-ups directamente y no pasan por aqui.
 func _spawn_powerup_for_obstacle_pattern(chunk: Node2D, chunk_x: float) -> void:
 	if not powerup_scene:
 		return
-	# Don't spawn power-ups until obstacles can actually appear
-	if not _bugs_unlocked:
-		return
 	var p_type: String
-	if not _servers_unlocked:
-		p_type = "code"
-	else:
-		p_type = "code" if rng.randf() > 0.5 else "cpu"
+	match _powerup_phase:
+		PowerupPhase.CLOUD:
+			p_type = "cloud"
+		PowerupPhase.CODE:
+			p_type = "code" if rng.randf() < 0.6 else "cloud"
+		PowerupPhase.CPU:
+			var roll: float = rng.randf()
+			if roll < 0.4:
+				p_type = "code"
+			elif roll < 0.7:
+				p_type = "cpu"
+			else:
+				p_type = "cloud"
 	var spawn_world_x: float = chunk_x + 100.0
 	var spawn_world_y: float = last_platform_y - PLATFORM_HEIGHT * 0.5 - rng.randf_range(10.0, 180.0)
 	_spawn_powerup(chunk, spawn_world_x, spawn_world_y, p_type)
@@ -260,6 +278,8 @@ func _generate_chunk(chunk_x: float) -> void:
 	# Chunk 0: intro flat, Chunks 1-2: movement tutorials (salto/doble salto),
 	# Chunk 3: selector de dificultad, Chunk 4: plano corto post-selector para
 	# que el jugador se acostumbre a la velocidad de la dificultad elegida.
+	# Chunks 5-7: FASE 2 Arquitectura en la nube (tutorial + ascenso one-way
+	# con powerup_cloud), antes del contenido por llaves.
 	# Tutorials are no longer fixed chunks; they are queued after key sections:
 	# - 1st key section -> code/bugs tutorial.
 	# - 2nd key section -> CPU/servers tutorial.
@@ -280,6 +300,14 @@ func _generate_chunk(chunk_x: float) -> void:
 		return
 	elif int(chunk_x / CHUNK_WIDTH) == 4:
 		_build_flat_ground(chunk)
+		return
+	# FASE 2 — Arquitectura en la nube: tutorial (chunk 5) y plataformas de
+	# ascenso con powerup_cloud (chunks 6-7), antes del contenido por llaves.
+	elif int(chunk_x / CHUNK_WIDTH) == 5:
+		_build_cloud_tutorial(chunk)
+		return
+	elif int(chunk_x / CHUNK_WIDTH) == 6 or int(chunk_x / CHUNK_WIDTH) == 7:
+		_build_cloud_platforms(chunk)
 		return
 	elif _key_chunks_remaining > 0:
 		var spawn_key: bool = _key_chunks_remaining == 2
@@ -382,6 +410,8 @@ func _build_code_tutorial(chunk: Node2D) -> void:
 	# Powerup then bug further ahead
 	_spawn_powerup(chunk, chunk.global_position.x + 250.0, GROUND_Y - 60.0, "code")
 	_create_obstacle(chunk, 650.0, last_platform_y - PLATFORM_HEIGHT * 0.5, "bug")
+	# A partir de aqui, los power-ups de obstaculos usan la fase CODE.
+	_powerup_phase = PowerupPhase.CODE
 
 ## CPU tutorial — powerup_cpu protects from servers.
 func _build_cpu_tutorial(chunk: Node2D) -> void:
@@ -401,6 +431,36 @@ func _build_cpu_tutorial(chunk: Node2D) -> void:
 	# Powerup then server further ahead
 	_spawn_powerup(chunk, chunk.global_position.x + 250.0, GROUND_Y - 60.0, "cpu")
 	_create_obstacle(chunk, 650.0, GROUND_Y - PLATFORM_HEIGHT * 0.5, "server")
+	# A partir de aqui, los power-ups de obstaculos usan la fase CPU.
+	_powerup_phase = PowerupPhase.CPU
+
+## Cloud tutorial — arquitectura en la nube evita caidas.
+## Chunk completamente plano para no mezclar plataformas con el texto del tutorial.
+func _build_cloud_tutorial(chunk: Node2D) -> void:
+	# Suelo plano y estable para una lectura clara del tutorial.
+	last_platform_y = GROUND_Y
+	_create_platform(chunk, 0, GROUND_Y, CHUNK_WIDTH)
+
+	# Mismo sistema visual de tutoriales de powerups (texto + icono -> icono).
+	_create_powerup_tutorial_panel(
+		chunk,
+		"Evita caidas con arquitectura en la nube",
+		"res://assets/powerups/powerup_cloud.png",
+		"res://assets/rocket_v2/caida/frame_102.png",
+		Vector2(30.0, GROUND_Y - 165)
+	)
+
+	# Powerups cloud al alcance sobre el suelo plano.
+	_spawn_powerup(chunk, chunk.global_position.x + 250.0, GROUND_Y - 60.0, "cloud")
+	_spawn_powerup(chunk, chunk.global_position.x + 550.0, GROUND_Y - 60.0, "cloud")
+	# A partir de aqui, los power-ups de obstaculos usan la fase CLOUD.
+	_powerup_phase = PowerupPhase.CLOUD
+
+## Fase nube — cadenas flotantes para ascender atravesando plataformas,
+## con un powerup_cloud al alcance por chunk.
+func _build_cloud_platforms(chunk: Node2D) -> void:
+	_build_floating_chain(chunk)
+	_spawn_powerup(chunk, chunk.global_position.x + CHUNK_WIDTH * 0.5, GROUND_Y - 120.0, "cloud")
 
 ## Creates a tutorial panel: text + icon → icon.
 func _create_powerup_tutorial_panel(chunk: Node2D, text: String, icon1_path: String, icon2_path: String, pos: Vector2) -> void:
@@ -911,6 +971,7 @@ func _create_platform(chunk: Node2D, local_x: float, world_y: float, width: floa
 	shape.size = Vector2(width, PLATFORM_HEIGHT)
 	var col := CollisionShape2D.new()
 	col.shape = shape
+	col.one_way_collision = true
 	platform.add_child(col)
 	
 	# Visual — main body

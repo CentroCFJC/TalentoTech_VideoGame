@@ -3,7 +3,7 @@ extends Area2D
 ## PowerUp — Collectible item that applies a temporary effect to the player.
 ## Modular: add new types by extending the match in _apply_effect().
 
-@export_enum("code", "cpu", "key") var type: String = "code"
+@export_enum("code", "cpu", "cloud", "key") var type: String = "code"
 @export var duration: float = 5.0
 
 var is_collected: bool = false
@@ -41,6 +41,14 @@ func _set_appearance_by_type() -> void:
 				sprite.texture = cpu_tex
 			sprite.modulate = Color(1.0, 1.0, 1.0)
 			sprite.scale = Vector2(0.5, 0.5)
+		"cloud":
+			var cloud_tex = load("res://assets/powerups/powerup_cloud.png")
+			if cloud_tex:
+				sprite.texture = cloud_tex
+			sprite.modulate = Color(1.0, 1.0, 1.0)
+			# La textura cloud es 211x205 (code/cpu son 49x49): compensar la
+			# escala para que el tamano final en juego sea el mismo (~24px).
+			sprite.scale = Vector2(0.116, 0.116)
 		"key":
 			var key_tex = load("res://assets/powerups/powerup_key.png")
 			if key_tex:

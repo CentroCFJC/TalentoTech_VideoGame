@@ -75,6 +75,7 @@ const ICON_BUG: String = "res://assets/bug/walk/frame_017.png"
 const ICON_SERVER: String = "res://assets/server/server_red.png"
 const ICON_CODE: String = "res://assets/powerups/powerup_code.png"
 const ICON_CPU: String = "res://assets/powerups/powerup_cpu.png"
+const ICON_CLOUD: String = "res://assets/powerups/powerup_cloud.png"
 const ICON_LOGO: String = "res://assets/logos/logo.png"
 
 const GAME_OVER_PANEL_TEXTURE: String = "res://assets/gameover/gameover_panel.png"
@@ -508,6 +509,8 @@ func _get_skill_data_for_type(type: String) -> Dictionary:
 			return {"name": "PROGRAMACIÓN", "icon_path": ICON_CODE, "accent": Color(0.2, 0.85, 0.5)}
 		"cpu":
 			return {"name": "CIBERSEGURIDAD", "icon_path": ICON_CPU, "accent": Color(0.7, 0.45, 1.0)}
+		"cloud":
+			return {"name": "ARQUITECTURA EN LA NUBE", "icon_path": ICON_CLOUD, "accent": Color(0.45, 0.75, 1.0)}
 	return {}
 
 func _setup_skillup_panel() -> void:
@@ -557,6 +560,9 @@ func _setup_skillup_panel() -> void:
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if type == "cloud":
+			label.text = "ARQUITECTURA\nEN LA NUBE"
+			label.autowrap_mode = TextServer.AUTOWRAP_WORD
 		grid.add_child(label)
 
 		var slot_container := HBoxContainer.new()
