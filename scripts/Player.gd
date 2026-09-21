@@ -418,13 +418,14 @@ func take_damage(cause: String = "bug") -> bool:
 ## el aterrizaje y evitar caer en un nuevo hueco.
 func _rescue_with_cloud() -> void:
 	GameManager.ConsumeStack("cloud")
+	GameManager.add_fall_prevented()
 	emit_signal("powerup_changed", "cloud", GameManager.GetStackCount("cloud"))
 	_update_skill_rings()
 	_spawn_rescue_cloud_visual()
 	# Rebote hacia arriba con altura suficiente para alcanzar plataformas.
 	velocity.y = RESCUE_BOUNCE_VELOCITY
-	# Doble salto disponible para ajustar el aterrizaje.
-	jumps_remaining = MAX_JUMPS
+	# Solo el segundo salto disponible: el rescate gasta el primer salto.
+	jumps_remaining = MAX_JUMPS - 1
 	coyote_timer = 0.0
 	jump_buffer_timer = 0.0
 	# Estado de rescate: inmunidad a bugs/servidores durante TODO el trayecto

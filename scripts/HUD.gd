@@ -38,6 +38,7 @@ var _progress_score_value: Label = null
 var _progress_best_value: Label = null
 var _progress_bugs_value: Label = null
 var _progress_servers_value: Label = null
+var _progress_falls_value: Label = null
 
 # SkillUp rows — maps powerup type → SkillUpRowData
 var _skillup_rows: Dictionary = {}
@@ -73,6 +74,7 @@ const PIP_MARGIN: Vector2 = Vector2(8, 8)
 const ICON_SCORE: String = "res://assets/powerups/score.png"
 const ICON_BUG: String = "res://assets/bug/walk/frame_017.png"
 const ICON_SERVER: String = "res://assets/server/server_red.png"
+const ICON_FALL: String = "res://assets/clouds/cloud.png"
 const ICON_CODE: String = "res://assets/powerups/powerup_code.png"
 const ICON_CPU: String = "res://assets/powerups/powerup_cpu.png"
 const ICON_CLOUD: String = "res://assets/powerups/powerup_cloud.png"
@@ -119,6 +121,7 @@ func _ready() -> void:
 	GameManager.keys_changed.connect(_on_keys_changed)
 	GameManager.bugs_eliminated_changed.connect(set_bugs_eliminated)
 	GameManager.servers_secured_changed.connect(set_servers_secured)
+	GameManager.falls_prevented_changed.connect(set_falls_prevented)
 	GameManager.max_stacks_changed.connect(_on_max_stacks_changed)
 
 	_setup_progress_panel()
@@ -215,6 +218,7 @@ func _show_playing_hud() -> void:
 		_progress_best_value.text = "%d" % GameManager.best_score
 	set_bugs_eliminated(GameManager.bugs_eliminated)
 	set_servers_secured(GameManager.servers_secured)
+	set_falls_prevented(GameManager.falls_prevented)
 	_connect_player_signal()
 
 func _show_game_over() -> void:
@@ -378,7 +382,7 @@ func _setup_progress_panel() -> void:
 	_progress_panel.offset_left   = 10
 	_progress_panel.offset_top    = 10
 	_progress_panel.offset_right  = 270
-	_progress_panel.offset_bottom = 190
+	_progress_panel.offset_bottom = 215
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 0)
@@ -406,6 +410,10 @@ func _setup_progress_panel() -> void:
 	var servers_row := _create_stat_row("SERVIDORES ASEGURADOS", ICON_SERVER, Color(0.55, 0.85, 1.0))
 	_progress_servers_value = servers_row.value_label
 	vbox.add_child(servers_row.row)
+
+	var falls_row := _create_stat_row("CAIDAS EVITADAS", ICON_FALL, Color.WHITE)
+	_progress_falls_value = falls_row.value_label
+	vbox.add_child(falls_row.row)
 
 func _create_stat_row(name_text: String, icon_path: String, icon_color: Color, icon_size: Vector2 = Vector2(24, 24), icon_offset: Vector2 = Vector2.ZERO) -> StatRow:
 	var row := HBoxContainer.new()
@@ -445,6 +453,10 @@ func set_bugs_eliminated(value: int) -> void:
 func set_servers_secured(value: int) -> void:
 	if _progress_servers_value:
 		_progress_servers_value.text = "%d" % value
+
+func set_falls_prevented(value: int) -> void:
+	if _progress_falls_value:
+		_progress_falls_value.text = "%d" % value
 
 # ── Key panel — top-center ────────────────────────────────────
 
@@ -898,8 +910,11 @@ func _enter_pip_mode() -> void:
 	)
 
 	if _key_panel and is_instance_valid(_key_panel):
-		_key_panel.show()
-		update_key_panel()
+		# En game over/death el panel superior-central debe permanecer oculto;
+		# la informacion de campistas ya se muestra en el panel de fin de partida.
+		if GameManager.current_state != GameManager.State.DEAD and GameManager.current_state != GameManager.State.GAME_OVER:
+			_key_panel.show()
+			update_key_panel()
 
 func _on_video_finished() -> void:
 	# The video ended naturally: close it immediately so the background is
@@ -938,8 +953,11 @@ func _close_video_internal() -> void:
 	if _logo_panel and is_instance_valid(_logo_panel):
 		_logo_panel.show()
 	if _key_panel and is_instance_valid(_key_panel):
-		_key_panel.show()
-		update_key_panel()
+		# En game over/death el panel superior-central debe permanecer oculto;
+		# la informacion de campistas ya se muestra en el panel de fin de partida.
+		if GameManager.current_state != GameManager.State.DEAD and GameManager.current_state != GameManager.State.GAME_OVER:
+			_key_panel.show()
+			update_key_panel()
 
 func _play_background_transition() -> void:
 	_is_transitioning = true

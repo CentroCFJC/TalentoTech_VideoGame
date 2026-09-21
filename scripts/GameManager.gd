@@ -8,6 +8,7 @@ signal score_changed(score: int)
 signal keys_changed(count: int)
 signal bugs_eliminated_changed(count: int)
 signal servers_secured_changed(count: int)
+signal falls_prevented_changed(count: int)
 signal max_stacks_changed(value: int)
 
 # Game states
@@ -31,6 +32,7 @@ var bg_series: int = 3
 # Per-run statistics
 var bugs_eliminated: int = 0
 var servers_secured: int = 0
+var falls_prevented: int = 0
 
 # Power-up stack system
 const POWERUP_TYPES := ["cloud", "code", "cpu"]
@@ -98,6 +100,7 @@ func start_game() -> void:
 	keys_collected = 0
 	bugs_eliminated = 0
 	servers_secured = 0
+	falls_prevented = 0
 	ResetAllStacks()
 	# Reinicia la configuracion de dificultad para esta nueva partida; el
 	# selector de dificultad volvera a aparecer una unica vez al inicio.
@@ -107,6 +110,7 @@ func start_game() -> void:
 	score_changed.emit(score)
 	bugs_eliminated_changed.emit(bugs_eliminated)
 	servers_secured_changed.emit(servers_secured)
+	falls_prevented_changed.emit(falls_prevented)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)
 	_is_transitioning = false
@@ -171,6 +175,7 @@ func restart_game() -> void:
 	keys_collected = 0
 	bugs_eliminated = 0
 	servers_secured = 0
+	falls_prevented = 0
 	ResetAllStacks()
 	if DifficultyManager:
 		DifficultyManager.reset()
@@ -178,6 +183,7 @@ func restart_game() -> void:
 	score_changed.emit(score)
 	bugs_eliminated_changed.emit(bugs_eliminated)
 	servers_secured_changed.emit(servers_secured)
+	falls_prevented_changed.emit(falls_prevented)
 	current_state = State.PLAYING
 	state_changed.emit(current_state)
 	_is_transitioning = false
@@ -195,6 +201,13 @@ func add_server_secured() -> void:
 		return
 	servers_secured += 1
 	servers_secured_changed.emit(servers_secured)
+
+## Increment per-run fall prevention counter (Arquitectura en la nube skill)
+func add_fall_prevented() -> void:
+	if current_state != State.PLAYING:
+		return
+	falls_prevented += 1
+	falls_prevented_changed.emit(falls_prevented)
 
 # ── Power-Up Stack System ──────────────────────────────────────
 
