@@ -36,6 +36,8 @@ var _mono_font: SystemFont
 var _progress_title_label: Label = null
 var _progress_score_value: Label = null
 var _progress_best_value: Label = null
+var _progress_record_row: HBoxContainer = null
+var _progress_record_name_label: Label = null
 var _progress_bugs_value: Label = null
 var _progress_servers_value: Label = null
 var _progress_falls_value: Label = null
@@ -95,17 +97,18 @@ const GAME_OVER_CTA_RECT: Rect2 = Rect2(Vector2(180, 1225), Vector2(725, 150))
 
 # Campista data: video basename → title + subtitle
 const CAMPER_DATA: Array[Dictionary] = [
-	{"video": "Andres-Felipe-Baja", "title": "ANDRÉS FELIPE SERNA", "subtitle": "Estudiante Ing. de Sistemas"},
-	{"video": "Angela-", "title": "ANGELA MARÍA HENAO", "subtitle": "Campista y emprendedora"},
-	{"video": "Familia-Tech", "title": "LA FAMILIA DOMINGUEZ", "subtitle": "Familia Campista"},
-	{"video": "Jorge", "title": "JORGE LEONARDO MARÍN", "subtitle": "Ing. Industrial y Traductor"},
-	{"video": "Video-La-Juanpis", "title": "LA JUANPIS", "subtitle": "Activista LGBTIQ+"},
-	{"video": "Video-Sebastían-Baja", "title": "JUAN SEBASTIÁN CAMACHO", "subtitle": "Ganador Hackaton 2025 Armenia"},
+	{"video": "Andres-Felipe-Baja", "title": "Andrés Felipe Serna", "subtitle": "Estudiante Ing. de Sistemas"},
+	{"video": "Angela-", "title": "Angela María Henao", "subtitle": "Campista y emprendedora"},
+	{"video": "Familia-Tech", "title": "La Familia Domínguez", "subtitle": "Familia Campista"},
+	{"video": "Jorge", "title": "Jorge Leonardo Marín", "subtitle": "Ing. Industrial y Traductor"},
+	{"video": "Video-La-Juanpis", "title": "La Juanpis", "subtitle": "Activista LGBTIQ+"},
+	{"video": "Video-Sebastían-Baja", "title": "Juan Sebastián Camacho", "subtitle": "Ganador Hackaton 2025 Armenia"},
 ]
 
 class StatRow:
 	var row: HBoxContainer
 	var value_label: Label
+	var name_label: Label = null
 
 class SkillUpRowData:
 	var label: Label
@@ -116,9 +119,13 @@ class SkillUpRowData:
 func _ready() -> void:
 	_setup_mono_font()
 
-	GameManager.score_changed.connect(_on_score_changed)
 	GameManager.state_changed.connect(_on_state_changed)
 	GameManager.keys_changed.connect(_on_keys_changed)
+	GameManager.visible_score_changed.connect(_on_visible_score_changed)
+	GameManager.visible_best_score_changed.connect(_on_visible_best_score_changed)
+	GameManager.score_reward_earned.connect(_on_score_reward_earned)
+	if DifficultyManager:
+		DifficultyManager.difficulty_selected.connect(_on_difficulty_selected)
 	GameManager.bugs_eliminated_changed.connect(set_bugs_eliminated)
 	GameManager.servers_secured_changed.connect(set_servers_secured)
 	GameManager.falls_prevented_changed.connect(set_falls_prevented)
@@ -199,7 +206,7 @@ func _show_playing_hud() -> void:
 	if _progress_panel:
 		_progress_panel.show()
 		if _progress_title_label:
-			_progress_title_label.text = "PROGRESO DE LA PARTIDA"
+			_progress_title_label.text = "Progreso de la partida"
 	if _key_panel:
 		_key_panel.show()
 		update_key_panel()
@@ -213,12 +220,15 @@ func _show_playing_hud() -> void:
 		_video_panel.hide()
 	_minimize_panel.hide()
 
-	_update_score(GameManager.score)
-	if _progress_best_value:
-		_progress_best_value.text = "%d" % GameManager.best_score
+	_update_score(GameManager.get_visible_score())
+	_update_best_score_label()
+	_update_record_label()
 	set_bugs_eliminated(GameManager.bugs_eliminated)
 	set_servers_secured(GameManager.servers_secured)
 	set_falls_prevented(GameManager.falls_prevented)
+	if _progress_record_row:
+		# El record se mantiene oculto hasta que se seleccione una dificultad.
+		_progress_record_row.hide()
 	_connect_player_signal()
 
 func _show_game_over() -> void:
@@ -232,7 +242,7 @@ func _show_game_over() -> void:
 	if _progress_panel:
 		_progress_panel.show()
 		if _progress_title_label:
-			_progress_title_label.text = "RESULTADO DE LA PARTIDA"
+			_progress_title_label.text = "Resultado de la partida"
 	if _key_panel:
 		_key_panel.hide()
 	if _skillup_panel:
@@ -241,6 +251,13 @@ func _show_game_over() -> void:
 		if not _is_pip_mode:
 			_logo_panel.show()
 	_minimize_panel.hide()
+
+	# Asegurar que el score visible y el récord estén actualizados en game over.
+	_update_score(GameManager.get_visible_score())
+	_update_best_score_label()
+	_update_record_label()
+	if _progress_record_row:
+		_progress_record_row.visible = DifficultyManager.current_difficulty != 0
 
 	print("[HUD] Actualizando tarjetas de campistas")
 	# Update camper cards based on watched videos
@@ -292,8 +309,66 @@ func _update_score(amount: int) -> void:
 	if _progress_score_value:
 		_progress_score_value.text = "%d" % amount
 
-func _on_score_changed(score: int) -> void:
-	_update_score(score)
+func _on_visible_score_changed(_score: int) -> void:
+	_update_score(GameManager.get_visible_score())
+	_update_record_label()
+
+func _on_visible_best_score_changed(_score: int) -> void:
+	_update_best_score_label()
+	_update_record_label()
+
+func _on_score_reward_earned(amount: int) -> void:
+	_spawn_floating_reward(amount)
+
+func _on_difficulty_selected(level: int) -> void:
+	if _progress_record_row:
+		_progress_record_row.show()
+	_update_best_score_label()
+	_update_record_label()
+
+func _update_best_score_label() -> void:
+	if not _progress_best_value:
+		return
+	var difficulty: int = DifficultyManager.current_difficulty
+	if difficulty == 0:
+		_progress_best_value.text = ""
+		return
+	var best: int = GameManager.best_scores_by_difficulty.get(difficulty, 0)
+	_progress_best_value.text = "%d" % best
+
+func _update_record_label() -> void:
+	if not _progress_record_name_label:
+		return
+	var difficulty: int = DifficultyManager.current_difficulty
+	if difficulty == 0:
+		_progress_record_name_label.text = "RÉCORD"
+		return
+	if GameManager.is_new_record:
+		_progress_record_name_label.text = "¡NUEVO RÉCORD!"
+	else:
+		_progress_record_name_label.text = "RÉCORD - %s" % DifficultyManager.get_difficulty_name(difficulty)
+
+func _spawn_floating_reward(amount: int) -> void:
+	var player := get_tree().get_first_node_in_group("player")
+	if not is_instance_valid(player):
+		return
+	var screen_pos: Vector2 = player.get_global_transform_with_canvas().origin
+	var label := Label.new()
+	_apply_mono(label)
+	label.text = "+%d" % amount
+	label.add_theme_font_size_override("font_size", 20)
+	label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.25))
+	label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.8))
+	label.add_theme_constant_override("outline_size", 4)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.position = screen_pos + Vector2(25, -45)
+	add_child(label)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(label, "position:y", label.position.y - 70, 1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(label, "modulate:a", 0.0, 1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tween.chain().tween_callback(label.queue_free)
 
 func _on_state_changed(new_state: GameManager.State) -> void:
 	match new_state:
@@ -381,28 +456,21 @@ func _setup_progress_panel() -> void:
 	_progress_panel.anchors_preset = Control.PRESET_TOP_LEFT
 	_progress_panel.offset_left   = 10
 	_progress_panel.offset_top    = 10
-	_progress_panel.offset_right  = 270
-	_progress_panel.offset_bottom = 215
+	_progress_panel.offset_right  = 360
+	_progress_panel.offset_bottom = 225
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 0)
 	_progress_panel.add_child(vbox)
 
-	_progress_title_label = _create_title_label("PROGRESO DE LA PARTIDA")
+	_progress_title_label = _create_title_label("Progreso de la partida")
 	vbox.add_child(_progress_title_label)
 
 	var sep := HSeparator.new()
 	sep.add_theme_color_override("color", Color(0.35, 0.60, 0.95, 0.5))
 	vbox.add_child(sep)
 
-	var score_row := _create_stat_row("PUNTUACIÓN", ICON_SCORE, Color(1.0, 0.85, 0.2))
-	_progress_score_value = score_row.value_label
-	vbox.add_child(score_row.row)
-
-	var best_row := _create_stat_row("RÉCORD", ICON_SCORE, Color(1.0, 0.85, 0.2))
-	_progress_best_value = best_row.value_label
-	vbox.add_child(best_row.row)
-
+	# Contadores de acciones (sin operaciones matemáticas).
 	var bugs_row := _create_stat_row("BUGS ELIMINADOS", ICON_BUG, Color(0.4, 1.0, 0.6), Vector2(36, 36), Vector2(-2, -5))
 	_progress_bugs_value = bugs_row.value_label
 	vbox.add_child(bugs_row.row)
@@ -411,9 +479,24 @@ func _setup_progress_panel() -> void:
 	_progress_servers_value = servers_row.value_label
 	vbox.add_child(servers_row.row)
 
-	var falls_row := _create_stat_row("CAIDAS EVITADAS", ICON_FALL, Color.WHITE)
+	var falls_row := _create_stat_row("CAÍDAS EVITADAS", ICON_FALL, Color.WHITE)
 	_progress_falls_value = falls_row.value_label
 	vbox.add_child(falls_row.row)
+
+	var total_sep := HSeparator.new()
+	total_sep.add_theme_color_override("color", Color(0.35, 0.60, 0.95, 0.5))
+	vbox.add_child(total_sep)
+
+	var score_row := _create_stat_row("PUNTAJE", ICON_SCORE, Color(1.0, 0.85, 0.2))
+	_progress_score_value = score_row.value_label
+	vbox.add_child(score_row.row)
+
+	var best_row := _create_stat_row("RÉCORD", ICON_SCORE, Color(1.0, 0.85, 0.2))
+	_progress_record_row = best_row.row
+	_progress_record_name_label = best_row.name_label
+	_progress_best_value = best_row.value_label
+	_progress_record_row.hide()
+	vbox.add_child(best_row.row)
 
 func _create_stat_row(name_text: String, icon_path: String, icon_color: Color, icon_size: Vector2 = Vector2(24, 24), icon_offset: Vector2 = Vector2.ZERO) -> StatRow:
 	var row := HBoxContainer.new()
@@ -444,6 +527,7 @@ func _create_stat_row(name_text: String, icon_path: String, icon_color: Color, i
 	var result := StatRow.new()
 	result.row = row
 	result.value_label = value
+	result.name_label = name_label
 	return result
 
 func set_bugs_eliminated(value: int) -> void:
@@ -518,11 +602,11 @@ func _on_keys_changed(_count: int) -> void:
 func _get_skill_data_for_type(type: String) -> Dictionary:
 	match type:
 		"code":
-			return {"name": "PROGRAMACIÓN", "icon_path": ICON_CODE, "accent": Color(0.2, 0.85, 0.5)}
+			return {"name": "Programación", "icon_path": ICON_CODE, "accent": Color(0.2, 0.85, 0.5)}
 		"cpu":
-			return {"name": "CIBERSEGURIDAD", "icon_path": ICON_CPU, "accent": Color(0.7, 0.45, 1.0)}
+			return {"name": "Ciberseguridad", "icon_path": ICON_CPU, "accent": Color(0.7, 0.45, 1.0)}
 		"cloud":
-			return {"name": "ARQUITECTURA EN LA NUBE", "icon_path": ICON_CLOUD, "accent": Color(0.45, 0.75, 1.0)}
+			return {"name": "Arquitectura en la nube", "icon_path": ICON_CLOUD, "accent": Color(0.45, 0.75, 1.0)}
 	return {}
 
 func _setup_skillup_panel() -> void:
@@ -548,7 +632,7 @@ func _setup_skillup_panel() -> void:
 	vbox.add_theme_constant_override("separation", 6)
 	_skillup_panel.add_child(vbox)
 
-	vbox.add_child(_create_title_label("HABILIDADES"))
+	vbox.add_child(_create_title_label("Habilidades"))
 
 	var sep := HSeparator.new()
 	sep.add_theme_color_override("color", Color(0.35, 0.60, 0.95, 0.5))
@@ -573,7 +657,7 @@ func _setup_skillup_panel() -> void:
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if type == "cloud":
-			label.text = "ARQUITECTURA\nEN LA NUBE"
+			label.text = "Arquitectura\nen la nube"
 			label.autowrap_mode = TextServer.AUTOWRAP_WORD
 		grid.add_child(label)
 
@@ -662,7 +746,7 @@ func _setup_logo() -> void:
 func _setup_title_prompt() -> void:
 	_title_prompt = Label.new()
 	_apply_mono(_title_prompt)
-	_title_prompt.text = "PRESIONA EL BOTÓN PARA INICIAR"
+	_title_prompt.text = "Presiona el botón para iniciar"
 	_title_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_title_prompt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_title_prompt.add_theme_font_size_override("font_size", 32)
@@ -1043,7 +1127,7 @@ void fragment() {
 
 	# Restart CTA (pulsing)
 	_gameover_restart_cta_label = _create_panel_label(GAME_OVER_CTA_RECT, 38, Color(0.35, 0.95, 1.0))
-	_gameover_restart_cta_label.text = "PRESIONA EL BOTÓN PARA REINICIAR"
+	_gameover_restart_cta_label.text = "Presiona el botón para reiniciar"
 	_gameover_card.add_child(_gameover_restart_cta_label)
 
 	print("[HUD] _setup_game_over_panel completado")

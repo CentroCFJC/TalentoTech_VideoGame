@@ -120,6 +120,15 @@ func get_speed() -> float:
 func get_max_stacks_per_powerup() -> int:
 	return int(get_config("max_stacks_per_powerup", 3))
 
+## Devuelve el nombre legible de una dificultad. Utiles para etiquetas como
+## "Record - Facil". Si level es 0 u invalido, devuelve cadena vacia.
+func get_difficulty_name(level: int = current_difficulty) -> String:
+	match level:
+		Level.EASY:   return "Fácil"
+		Level.MEDIUM: return "Medio"
+		Level.HARD:   return "Difícil"
+	return ""
+
 ## Aplica los parametros a los sistemas dependientes de forma centralizada.
 ## El selector NO toca GameManager / Player directamente; lo hace este metodo.
 func _apply_to_systems() -> void:

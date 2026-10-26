@@ -337,6 +337,11 @@ func _physics_process(delta: float) -> void:
 	# --- Jump lockout (prevents the jump button used to start the game from also jumping) ---
 	if _jump_lockout_timer > 0.0:
 		_jump_lockout_timer -= delta
+	elif rescue_active and velocity.y < 0.0:
+		# Ascenso del rescate con nube: ignorar el boton de salto. Tras una
+		# caida el jugador suele presionarlo desesperadamente y gastaria sin
+		# querer el doble salto restante antes de completar el rebote.
+		jump_buffer_timer = 0.0
 	else:
 		# --- Jump buffer ---
 		jump_buffer_timer -= delta
@@ -360,7 +365,8 @@ func _physics_process(delta: float) -> void:
 				double_jump_sfx.play()
 
 	# Variable jump height: cut jump short on release
-	if Input.is_action_just_released("jump") and velocity.y < 0:
+	# (Nunca durante el ascenso del rescate: no recortar el rebote de la nube)
+	if not rescue_active and Input.is_action_just_released("jump") and velocity.y < 0:
 		velocity.y *= 0.5
 
 	# --- Auto-run (always move right) ---
@@ -468,6 +474,7 @@ func apply_powerup(type: String, _duration: float) -> void:
 		"code", "cpu", "cloud":
 			SFXManager.play("correct-game-show-alert-499485")
 			GameManager.AddStack(type)
+			GameManager.add_powerup_acquired()
 			var stacks := GameManager.GetStackCount(type)
 			emit_signal("powerup_changed", type, stacks)
 			_update_skill_rings()
@@ -475,6 +482,7 @@ func apply_powerup(type: String, _duration: float) -> void:
 			SFXManager.play("correct-game-show-alert-499485")
 			GameManager.keys_collected += 1
 			GameManager.keys_changed.emit(GameManager.keys_collected)
+			GameManager.add_key_collected()
 			emit_signal("video_key_collected")
 
 func _update_skill_rings() -> void:
